@@ -557,7 +557,7 @@ function testNativeViewportCulling() {
   var center = engine.centerWorld()
   state.redrawTiles({ x: center.x + 10, y: center.y })
   assert.strictEqual(state.visibleTiles[0], original, 'stable visible nodes survive source metadata refresh')
-  assert.deepStrictEqual(Object.keys(original).sort(), ['height', 'id', 'left', 'src', 'top', 'width'],
+  assert.deepStrictEqual(Object.keys(original).sort(), ['drawHeight', 'drawWidth', 'height', 'id', 'left', 'src', 'top', 'width'],
     'the view model only receives render fields for each image node')
   state.redrawTiles({ x: center.x + 5000, y: center.y })
   assert.strictEqual(state.visibleTiles.length, 0, 'offscreen tile nodes are removed during a drag')
@@ -753,8 +753,8 @@ function testNativeLayeringAndMemoryProfile() {
     'bursty tile callbacks are coalesced before native image work')
   assert.strictEqual(Config.REQUEST_CONCURRENCY, 1, 'tile downloads use one concurrent request in the low-memory profile')
   assert.strictEqual(Config.EDGE_BUFFER_RATIO, 0, 'the low-memory profile does not prefetch off-screen tiles')
-  assert.ok(page.indexOf('width: {{$item.width + 1}}px; height: {{$item.height + 1}}px;') >= 0,
-    'tiles overlap by one design pixel to hide subpixel seams')
+  assert.ok(page.indexOf('width: {{$item.drawWidth}}px; height: {{$item.drawHeight}}px;') >= 0,
+    'tiles use a precomputed draw size so the template never does arithmetic')
   assert.ok(page.indexOf('retryVisible(true, true)') >= 0,
     'network retries happen only after an explicit retry gesture')
   assert.strictEqual(/\bonwheel=|\bonrotary=/.test(page), false,

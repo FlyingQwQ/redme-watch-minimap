@@ -1,7 +1,7 @@
 <template>
   <stack id="map-root" class="map-root" style="width: {{viewWidth}}px; height: {{viewHeight}}px;" ontouchstart="onMapTouchStart" ontouchmove="onMapTouchMove" ontouchend="onMapTouchEnd" onlongpress="openSettings">
     <stack class="tile-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
-      <image for="{{visibleTiles}}" tid="id" class="map-tile" alt="blank" src="{{$item.src}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.width + 1}}px; height: {{$item.height + 1}}px;" oncomplete="onTileImageComplete($item.id, $item.src)" onerror="onTileImageError($item.id, $item.src)"></image>
+      <image for="{{visibleTiles}}" tid="id" class="map-tile" alt="blank" src="{{$item.src}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.drawWidth}}px; height: {{$item.drawHeight}}px;" oncomplete="onTileImageComplete($item.id, $item.src)" onerror="onTileImageError($item.id, $item.src)"></image>
     </stack>
     <stack class="failure-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
       <div for="{{failedTiles}}" tid="id" class="failed-tile" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.width}}px; height: {{$item.height}}px;"></div>
@@ -574,13 +574,15 @@ export default {
       var node = previousById[tile.id]
       var isNew = !node || node.src !== tile.src
       if (isNew) {
-        node = { id: tile.id, src: tile.src, left: 0, top: 0, width: 0, height: 0 }
+        node = { id: tile.id, src: tile.src, left: 0, top: 0, width: 0, height: 0, drawWidth: 0, drawHeight: 0 }
         fresh.push(node)
       }
       node.left = left
       node.top = top
       node.width = tileWidth
       node.height = tileHeight
+      node.drawWidth = tileWidth + 1
+      node.drawHeight = tileHeight + 1
       candidateById[node.id] = node
     }
     // Stage native image creation: a cache burst can deliver a dozen tiles at
