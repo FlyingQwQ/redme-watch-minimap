@@ -1081,9 +1081,6 @@ export default {
   height: 100%;
   background-color: #111719;
 }
-.tile-layer {
-  background-color: #f2efe9;
-}
 .failure-layer,
 .loading-layer,
 .tile-layer,
