@@ -21,6 +21,7 @@
     <stack class="controls-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
       <div class="status-card" style="left: 14px; top: 12px; width: {{statusWidth}}px;" onclick="retryTiles" ontouchstart="onUiTouchStart">
         <text class="status-text">{{statusText}}</text>
+        <text if="{{tileDiagText}}" class="status-diag">{{tileDiagText}}</text>
       </div>
 
       <div class="map-control recenter-control" style="left: {{controlLeft}}px; top: {{recenterTop}}px;" onclick="recenter" ontouchstart="onUiTouchStart">
@@ -100,6 +101,7 @@ function createRuntimeState() {
     layoutTimer: null,
     dragTimer: null,
     tileApplyTimer: null,
+    autoRetryTimer: null,
     pendingTiles: null,
     pendingRequired: 0,
     pendingLoaded: 0,
@@ -163,6 +165,7 @@ export default {
     dotLeft: 0,
     dotTop: 0,
     statusText: '地图加载中',
+    tileDiagText: '',
     mapAttribution: Config.TILE_ATTRIBUTION
   },
 
@@ -213,6 +216,7 @@ export default {
     state.settingsPending = false
     if (state.tileApplyTimer !== null) clearTimeout(state.tileApplyTimer)
     state.tileApplyTimer = null
+    this.clearAutoRetry()
     if (state.tileManager) {
       state.tileManager.setVisible(false)
       state.tileManager.setPinnedKeys([])
@@ -241,6 +245,7 @@ export default {
     state.disposed = true
     state.pageVisible = false
     this.cancelGesture()
+    this.clearAutoRetry()
     if (state.layoutTimer !== null) clearTimeout(state.layoutTimer)
     if (state.dragTimer !== null) clearTimeout(state.dragTimer)
     if (state.tileApplyTimer !== null) clearTimeout(state.tileApplyTimer)
@@ -428,6 +433,8 @@ export default {
       state.lastTileStatus = message
       if (state.tileManager) self.refreshLoadingIndicators()
       self.statusText = state.locationFix ? '定位 · ' + message : message
+      self.updateTileDiagnostics()
+      self.scheduleAutoRetry()
     }, Providers.get(state.sourceId))
     state.locationManager = new LocationManager(geolocation, function (fix) {
       if (state.disposed) return
@@ -449,6 +456,8 @@ export default {
     state.tileManager.setVisible(state.pageVisible)
     state.runtimeReady = true
     this.updateTilePlan()
+    this.updateTileDiagnostics()
+    this.scheduleAutoRetry()
     if (state.pageVisible) state.locationManager.start()
   },
 
@@ -460,6 +469,8 @@ export default {
       state.tileManager.setVisible(true)
       state.tileManager.publish()
       this.updateTilePlan()
+      this.updateTileDiagnostics()
+      this.scheduleAutoRetry()
     }
     if (state.locationManager) state.locationManager.start()
   },
@@ -470,6 +481,9 @@ export default {
     state.pendingTiles = tiles
     state.pendingRequired = requiredCount
     state.pendingLoaded = loadedCount
+    this.updateTileDiagnostics()
+    if (loadedCount > 0) this.clearAutoRetry()
+    else if (requiredCount > 0) this.scheduleAutoRetry()
     if (state.tileApplyTimer !== null) return
     var self = this
     state.tileApplyTimer = setTimeout(function () {
@@ -500,6 +514,9 @@ export default {
       state.pixelScale
     )
     this.redrawTiles()
+    this.updateTileDiagnostics()
+    if (state.loadedTileCount > 0) this.clearAutoRetry()
+    else if (state.requiredTileCount > 0) this.scheduleAutoRetry()
     if (!state.locationFix) {
       if (state.loadedTileCount > 0 && state.loadedTileCount >= state.requiredTileCount) {
         state.lastTileStatus = ''
@@ -508,6 +525,41 @@ export default {
         this.statusText = '地图加载中 ' + state.loadedTileCount + '/' + state.requiredTileCount
       }
     }
+  },
+
+  updateTileDiagnostics() {
+    var state = runtime
+    if (!state.tileManager) {
+      this.tileDiagText = ''
+      return
+    }
+    var stats = state.tileManager.getStats()
+    var text = '请求' + stats.attempted + ' 成功' + stats.succeeded + ' 失败' + stats.failed
+    if (stats.failed > 0 && stats.lastCode) text += ' · ' + stats.lastCode
+    this.tileDiagText = text
+  },
+
+  scheduleAutoRetry() {
+    var state = runtime
+    if (state.disposed || !state.pageVisible || state.autoRetryTimer !== null) return
+    if (state.loadedTileCount > 0 || state.requiredTileCount <= 0) return
+    var self = this
+    state.autoRetryTimer = setTimeout(function () {
+      state.autoRetryTimer = null
+      if (state.disposed || !state.pageVisible) return
+      if (state.loadedTileCount === 0 && state.requiredTileCount > 0 &&
+          !state.gesture && !state.pinch && state.tileManager) {
+        state.tileManager.retryVisible(false)
+        self.updateTileDiagnostics()
+      }
+      self.scheduleAutoRetry()
+    }, 15000)
+  },
+
+  clearAutoRetry() {
+    var state = runtime
+    if (state.autoRetryTimer !== null) clearTimeout(state.autoRetryTimer)
+    state.autoRetryTimer = null
   },
 
   flushPendingTiles() {
@@ -1055,6 +1107,8 @@ export default {
     state.imageErrorCount = 0
     this.statusText = '正在重试地图加载'
     state.tileManager.retryVisible(true, true)
+    this.updateTileDiagnostics()
+    this.scheduleAutoRetry()
   },
 
   onTileImageError(id, src) {
@@ -1122,11 +1176,13 @@ export default {
   height: 256px;
 }
 .status-card {
-  height: 38px;
+  height: 52px;
   padding-left: 12px;
   padding-right: 12px;
   border-radius: 14px;
   background-color: rgba(13, 22, 24, 0.86);
+  flex-direction: column;
+  align-items: flex-start;
   justify-content: center;
 }
 .status-text {
@@ -1134,6 +1190,11 @@ export default {
   font-size: 15px;
   font-weight: 600;
   text-overflow: ellipsis;
+}
+.status-diag {
+  color: #9fb4bb;
+  font-size: 13px;
+  margin-top: 2px;
 }
 .map-control {
   width: 56px;

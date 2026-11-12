@@ -43,6 +43,7 @@ function TileManager(network, fileApi, onChange, onStatus, provider) {
   this.retiredUris = []
   this.retireTimer = null
   this.fileVersion = 0
+  this.stats = { attempted: 0, succeeded: 0, failed: 0, lastCode: 0, lastMessage: '' }
   this.prepare()
 }
 
@@ -188,6 +189,17 @@ TileManager.prototype.setProvider = function (provider) {
   this.provider = provider
   this.cooldownUntil = 0
   this.consecutiveFailures = 0
+  this.stats = { attempted: 0, succeeded: 0, failed: 0, lastCode: 0, lastMessage: '' }
+}
+
+TileManager.prototype.getStats = function () {
+  return {
+    attempted: this.stats.attempted,
+    succeeded: this.stats.succeeded,
+    failed: this.stats.failed,
+    lastCode: this.stats.lastCode,
+    lastMessage: this.stats.lastMessage
+  }
 }
 
 TileManager.prototype.setPlan = function (plans) {
@@ -413,8 +425,14 @@ TileManager.prototype.dispatchNetwork = function (job, options) {
 
 TileManager.prototype.startRequest = function (job) {
   var self = this
-  var url = this.provider.url.replace('{z}', job.plan.z).replace('{x}', job.plan.x).replace('{y}', job.plan.y)
+  var url = this.provider.url
+  if (this.provider.subdomains && url.indexOf('{s}') >= 0) {
+    var hosts = this.provider.subdomains
+    url = url.replace('{s}', hosts[(job.attempt || 0) % hosts.length])
+  }
+  url = url.replace('{z}', job.plan.z).replace('{x}', job.plan.x).replace('{y}', job.plan.y)
   job.url = url
+  this.stats.attempted += 1
   var headers = {
     'User-Agent': Config.USER_AGENT,
     'Accept': 'image/png,image/jpeg'
@@ -588,6 +606,9 @@ TileManager.prototype.recordForResponse = function (job, uri, byteLength, header
 
 TileManager.prototype.storeRecord = function (job, record) {
   if (this.dead || this.inFlight[job.key] !== job) return
+  this.stats.succeeded += 1
+  this.stats.lastCode = 0
+  this.stats.lastMessage = ''
   this.consecutiveFailures = 0
   delete this.failureCount[job.key]
   delete this.failureRetryAt[job.key]
@@ -633,6 +654,9 @@ TileManager.prototype.finishFailure = function (job, message, code, retryAfter) 
   var count = (this.failureCount[job.key] || 0) + 1
   this.failureCount[job.key] = count
   this.consecutiveFailures += 1
+  this.stats.failed += 1
+  this.stats.lastCode = Number(code) || 0
+  this.stats.lastMessage = message
   this.onStatus(message)
   if (this.consecutiveFailures >= 3) {
     // A blocked or dead network otherwise churns through every visible tile.
