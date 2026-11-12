@@ -1,7 +1,7 @@
 <template>
   <stack id="map-root" class="map-root" style="width: {{viewWidth}}px; height: {{viewHeight}}px;" ontouchstart="onMapTouchStart" ontouchmove="onMapTouchMove" ontouchend="onMapTouchEnd" onlongpress="openSettings">
     <stack class="tile-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
-      <image for="{{visibleTiles}}" tid="id" class="map-tile" alt="blank" src="{{$item.src}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.width}}px; height: {{$item.height}}px;" oncomplete="onTileImageComplete($item.id, $item.src)" onerror="onTileImageError($item.id, $item.src)"></image>
+      <image for="{{visibleTiles}}" tid="id" class="map-tile" alt="blank" src="{{$item.src}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.width + 1}}px; height: {{$item.height + 1}}px;" oncomplete="onTileImageComplete($item.id, $item.src)" onerror="onTileImageError($item.id, $item.src)"></image>
     </stack>
     <stack class="failure-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
       <div for="{{failedTiles}}" tid="id" class="failed-tile" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.width}}px; height: {{$item.height}}px;"></div>
@@ -389,8 +389,11 @@ export default {
       screenWidth: state.screenWidth,
       screenDensity: state.screenDensity
     }, Config.DESIGN_WIDTH)
-    state.pixelScale = TileLayout.pixelScale(this.viewWidth, state.physicalScreenWidth)
-    state.tileSize = TileLayout.styleTileSize(Config.TILE_RASTER_SIZE, state.pixelScale)
+    // Vela lays pages out in design units. Converting the 256px raster to a
+    // fractional physical size makes neighbouring tiles round to different
+    // edges and produces visible seams; keep the map in design units.
+    state.pixelScale = 1
+    state.tileSize = Config.TILE_RASTER_SIZE
     state.engine.setViewport(this.viewWidth, this.viewHeight, state.tileSize)
     this.updateLayoutControls()
     var signature = this.viewWidth + 'x' + this.viewHeight + ':' + state.tileSize + ':' +

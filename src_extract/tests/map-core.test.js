@@ -753,8 +753,8 @@ function testNativeLayeringAndMemoryProfile() {
     'bursty tile callbacks are coalesced before native image work')
   assert.strictEqual(Config.REQUEST_CONCURRENCY, 1, 'tile downloads use one concurrent request in the low-memory profile')
   assert.strictEqual(Config.EDGE_BUFFER_RATIO, 0, 'the low-memory profile does not prefetch off-screen tiles')
-  assert.ok(page.indexOf('width: {{$item.width}}px; height: {{$item.height}}px;') >= 0,
-    'independently snapped image width and height are used for seam-free tile placement')
+  assert.ok(page.indexOf('width: {{$item.width + 1}}px; height: {{$item.height + 1}}px;') >= 0,
+    'tiles overlap by one design pixel to hide subpixel seams')
   assert.ok(page.indexOf('retryVisible(true, true)') >= 0,
     'network retries happen only after an explicit retry gesture')
   assert.strictEqual(/\bonwheel=|\bonrotary=/.test(page), false,
