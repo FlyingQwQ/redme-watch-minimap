@@ -581,8 +581,10 @@ export default {
       node.top = top
       node.width = tileWidth
       node.height = tileHeight
-      node.drawWidth = tileWidth + 1
-      node.drawHeight = tileHeight + 1
+      // Exact size: an overlap makes each tile stretch by 1px and duplicates
+      // the edge content at every boundary.
+      node.drawWidth = tileWidth
+      node.drawHeight = tileHeight
       candidateById[node.id] = node
     }
     // Stage native image creation: a cache burst can deliver a dozen tiles at
@@ -1078,6 +1080,9 @@ export default {
   width: 100%;
   height: 100%;
   background-color: #111719;
+}
+.tile-layer {
+  background-color: #f2efe9;
 }
 .failure-layer,
 .loading-layer,

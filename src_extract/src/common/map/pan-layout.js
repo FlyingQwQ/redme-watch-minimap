@@ -23,7 +23,7 @@ function update(tiles, previous, center, zoom, size, width, height, scale, error
       for (var i = 0; i < previous.length; i += 1) {
         if (previous[i].id === tile.id && previous[i].src === tile.src) { node = previous[i]; break }
       }
-      if (!node) node = { id: tile.id, src: tile.src, left: left, top: top, width: size, height: size, drawWidth: size + 1, drawHeight: size + 1 }
+      if (!node) node = { id: tile.id, src: tile.src, left: left, top: top, width: size, height: size, drawWidth: size, drawHeight: size }
       if (!next) next = previous.slice(0, visibleCount)
     }
     if (node.left !== left) node.left = left
