@@ -8,9 +8,11 @@ module.exports = {
   TILE_SOURCE_ID: 'osmfr-v1',
   TILE_URL: 'https://a.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png',
   TILE_ATTRIBUTION: '© OpenStreetMap / ODbL · Tiles: OSM France',
-  USER_AGENT: 'RedmiWatch6NativeMap/0.1.14 (Xiaomi Vela)',
+  USER_AGENT: 'RedmiWatch6NativeMap/0.1.15 (Xiaomi Vela)',
   REQUEST_CONCURRENCY: 1,
   REQUEST_TIMEOUT_MS: 15000,
+  // Native image decodes are the largest memory spike on a 30MB watch.
+  REVEAL_TILE_BATCH: 4,
   ENABLE_PINCH_PREVIEW: false,
   EDGE_BUFFER_RATIO: 0,
   // Target device has 32MB total RAM; app heap is smaller and unmeasured.

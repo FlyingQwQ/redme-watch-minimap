@@ -105,6 +105,10 @@ function createRuntimeState() {
     pendingLoaded: 0,
     lastZoomAt: 0,
     lastManualRetryAt: 0,
+    pinnedSignature: '',
+    settingsPending: false,
+    revealTimer: null,
+    revealPending: false,
     gesture: null,
     panInput: null,
     pinch: null,
@@ -196,9 +200,27 @@ export default {
     state.preferencesGeneration += 1
     state.uiTouchActive = false
     state.pendingTiles = null
+    state.settingsPending = false
     if (state.tileApplyTimer !== null) clearTimeout(state.tileApplyTimer)
     state.tileApplyTimer = null
-    if (state.tileManager) state.tileManager.setVisible(false)
+    if (state.tileManager) {
+      state.tileManager.setVisible(false)
+      state.tileManager.setPinnedKeys([])
+    }
+    state.pinnedSignature = ''
+    state.revealPending = false
+    if (state.revealTimer !== null) clearTimeout(state.revealTimer)
+    state.revealTimer = null
+    // Drop every native image node while the page is hidden (settings page,
+    // screen off). The tile metadata stays cached and is republished on show.
+    state.tiles = []
+    state.failureRecords = []
+    state.imageReady = {}
+    state.imageErrors = {}
+    this.visibleTiles = []
+    this.failedTiles = []
+    this.loadingIndicators = []
+    this.markerVisible = false
     this.cancelGesture()
     if (state.locationManager) state.locationManager.stop()
   },
@@ -212,9 +234,12 @@ export default {
     if (state.layoutTimer !== null) clearTimeout(state.layoutTimer)
     if (state.dragTimer !== null) clearTimeout(state.dragTimer)
     if (state.tileApplyTimer !== null) clearTimeout(state.tileApplyTimer)
+    if (state.revealTimer !== null) clearTimeout(state.revealTimer)
     state.layoutTimer = null
     state.dragTimer = null
     state.tileApplyTimer = null
+    state.revealTimer = null
+    state.revealPending = false
     state.pendingTiles = null
     if (state.tileManager) state.tileManager.destroy()
     if (state.locationManager) state.locationManager.stop()
@@ -247,6 +272,19 @@ export default {
   openSettings() {
     var state = runtime
     if (!state.pageVisible || state.disposed || state.openingSettings || state.uiTouchActive || (state.gesture && state.gesture.moved)) return
+    // Never push a page while a finger is still down: the router transition
+    // would run in the middle of a touch sequence.
+    if (state.gesture) {
+      state.settingsPending = true
+      return
+    }
+    this.openSettingsNow()
+  },
+
+  openSettingsNow() {
+    var state = runtime
+    if (!state.pageVisible || state.disposed || state.openingSettings) return
+    state.settingsPending = false
     state.openingSettings = true
     this.cancelGesture(true)
     try { router.push({ uri: '/pages/settings' }) }
@@ -269,7 +307,11 @@ export default {
       if (state.engine) state.engine.sourceId = value.sourceId
       if (changed) {
         state.layoutSignature = ''
-        if (state.tileManager) state.tileManager.setProvider(Providers.get(value.sourceId))
+        state.pinnedSignature = ''
+        if (state.tileManager) {
+          state.tileManager.setProvider(Providers.get(value.sourceId))
+          state.tileManager.setPinnedKeys([])
+        }
         state.tiles = []
         state.failureRecords = []
         state.imageReady = {}
@@ -483,8 +525,11 @@ export default {
     var height = this.viewHeight
     var size = state.tileSize
     var previous = this.visibleTiles
-    var previousById = null
-    var visible = []
+    var previousById = {}
+    var p
+    for (p = 0; p < previous.length; p += 1) previousById[previous[p].id] = previous[p]
+    var candidateById = {}
+    var fresh = []
     for (var i = 0; i < state.tiles.length; i += 1) {
       var tile = state.tiles[i]
       if (tile.z !== state.engine.zoom) continue
@@ -513,25 +558,63 @@ export default {
         tileHeight = rect.height
       }
       if (left + tileWidth <= 0 || top + tileHeight <= 0 || left >= width || top >= height) continue
-      if (!previousById) {
-        previousById = {}
-        for (var p = 0; p < previous.length; p += 1) previousById[previous[p].id] = previous[p]
-      }
       var node = previousById[tile.id]
-      if (!node || node.src !== tile.src) {
+      var isNew = !node || node.src !== tile.src
+      if (isNew) {
         node = { id: tile.id, src: tile.src, left: 0, top: 0, width: 0, height: 0 }
+        fresh.push(node)
       }
       node.left = left
       node.top = top
       node.width = tileWidth
       node.height = tileHeight
-      visible.push(node)
+      candidateById[node.id] = node
+    }
+    // Stage native image creation: a cache burst can deliver a dozen tiles at
+    // once, and decoding all of them in one frame is the largest memory spike.
+    var allowed = null
+    if (fresh.length > Config.REVEAL_TILE_BATCH) {
+      fresh.sort(function (a, b) {
+        var ax = a.left + a.width / 2 - width / 2
+        var ay = a.top + a.height / 2 - height / 2
+        var bx = b.left + b.width / 2 - width / 2
+        var by = b.top + b.height / 2 - height / 2
+        return ax * ax + ay * ay - (bx * bx + by * by)
+      })
+      allowed = {}
+      for (var f = 0; f < Config.REVEAL_TILE_BATCH; f += 1) allowed[fresh[f].id] = true
+      state.revealPending = true
+    } else {
+      state.revealPending = false
+    }
+    var visible = []
+    var included = {}
+    // Keep existing nodes in their previous order so the native list stays
+    // stable; append newly revealed tiles after them.
+    for (p = 0; p < previous.length; p += 1) {
+      var kept = candidateById[previous[p].id]
+      if (!kept || kept !== previous[p] || included[kept.id]) continue
+      included[kept.id] = true
+      visible.push(kept)
+    }
+    for (var f2 = 0; f2 < fresh.length; f2 += 1) {
+      var next = fresh[f2]
+      if (included[next.id]) continue
+      if (allowed && !allowed[next.id]) continue
+      included[next.id] = true
+      visible.push(next)
+    }
+    if (!state.revealPending && state.revealTimer !== null) {
+      clearTimeout(state.revealTimer)
+      state.revealTimer = null
     }
     var same = visible.length === previous.length
     for (var v = 0; same && v < visible.length; v += 1) {
       if (visible[v] !== previous[v]) same = false
     }
     if (!same) this.visibleTiles = visible
+    if (state.revealPending) this.scheduleReveal()
+    this.syncPinnedTiles(visible)
     var ready = {}
     var errors = {}
     for (var k = 0; k < visible.length; k += 1) {
@@ -654,6 +737,37 @@ export default {
     return true
   },
 
+  scheduleReveal() {
+    var state = runtime
+    if (state.revealTimer !== null) return
+    var self = this
+    state.revealTimer = setTimeout(function () {
+      state.revealTimer = null
+      if (state.disposed || !state.pageVisible) return
+      if (state.gesture && state.gesture.moved) {
+        state.revealPending = true
+        return
+      }
+      if (state.revealPending) self.redrawTiles()
+    }, 90)
+  },
+
+  syncPinnedTiles(nodes) {
+    var state = runtime
+    if (!state.tileManager) return
+    var list = nodes || []
+    var signature = ''
+    var keys = []
+    for (var i = 0; i < list.length; i += 1) {
+      if (i > 0) signature += '|'
+      signature += list[i].id
+      keys.push(list[i].id)
+    }
+    if (signature === state.pinnedSignature) return
+    state.pinnedSignature = signature
+    state.tileManager.setPinnedKeys(keys)
+  },
+
   redrawPanTiles() {
     var state = runtime
     if (!state.gesture || !state.gesture.moved) return
@@ -662,6 +776,7 @@ export default {
       state.engine.zoom, state.tileSize, this.viewWidth, this.viewHeight,
       state.pixelScale, state.imageErrors)
     if (visible !== this.visibleTiles) this.visibleTiles = visible
+    this.syncPinnedTiles(visible)
     var failed = PanLayout.update(state.failureRecords, this.failedTiles, center,
       state.engine.zoom, state.tileSize, this.viewWidth, this.viewHeight, state.pixelScale)
     if (failed !== this.failedTiles) this.failedTiles = failed
@@ -762,6 +877,7 @@ export default {
     if (!state.gesture.moved) {
       if (dx * dx + dy * dy < DRAG_START_DISTANCE * DRAG_START_DISTANCE) return
       state.gesture.moved = true
+      state.settingsPending = false
       if (state.tileManager) state.tileManager.setInteracting(true)
       state.followLocation = false
       if (this.loadingIndicators.length) this.loadingIndicators = []
@@ -783,6 +899,7 @@ export default {
     this.syncPanInput()
     var gesture = state.gesture
     if (gesture.moved) {
+      state.settingsPending = false
       state.engine.commitWorldCenter(gesture.currentWorld)
       state.gesture = null
       this.flushPendingTiles()
@@ -795,6 +912,7 @@ export default {
     if (state.dragTimer !== null) clearTimeout(state.dragTimer)
     state.dragTimer = null
     if (state.tileManager) state.tileManager.setInteracting(false)
+    if (state.settingsPending) this.openSettingsNow()
   },
 
   scheduleDragRender() {

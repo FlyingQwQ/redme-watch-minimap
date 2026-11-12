@@ -11,8 +11,14 @@ function build(plans, tiles, errors, manager, width, height, scale) {
     var requestFailed = !src && manager && (manager.getTileState(plan.key) === 'failed' ||
       (manager.hasTileFailure && manager.hasTileFailure(plan.key)))
     if (!decodeFailed && !requestFailed) continue
-    if (plan.left + plan.size <= 0 || plan.top + plan.size <= 0 || plan.left >= width || plan.top >= height) continue
-    var rect = TileLayout.snappedRect(plan.left, plan.top, plan.size, scale)
+    // Clip the border to the viewport: a partially visible failed tile must not
+    // create a node or layout rect outside the screen.
+    var left = Math.max(0, plan.left)
+    var top = Math.max(0, plan.top)
+    var right = Math.min(width, plan.left + plan.size)
+    var bottom = Math.min(height, plan.top + plan.size)
+    if (right <= left || bottom <= top) continue
+    var rect = TileLayout.snappedRect(left, top, right - left, bottom - top, scale)
     result.push({ id: plan.key, key: plan.key, src: 'failure',
       left: rect.left, top: rect.top, width: rect.width, height: rect.height,
       size: plan.size, z: plan.z, x: plan.x, y: plan.y, unwrappedX: plan.unwrappedX })

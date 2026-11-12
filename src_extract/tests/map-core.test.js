@@ -403,7 +403,8 @@ function testFailureBorders() {
   assert.strictEqual(result.length, 2, 'only visible failed tiles get borders, valid cached images remain unmarked')
   assert.strictEqual(result[0].id, 'network')
   assert.strictEqual(result[1].id, 'decode')
-  assert.strictEqual(result[1].width, 256, 'border follows complete tile geometry')
+  assert.strictEqual(result[1].width, 176, 'partially visible borders are clipped to the viewport')
+  assert.ok(result.every(function (node) { return node.left >= 0 && node.top >= 0 && node.left + node.width <= 432 && node.top + node.height <= 514 }), 'no failure border extends outside the viewport')
   var retrying = { getTileState: function () { return 'queued' }, hasTileFailure: function () { return true } }
   assert.strictEqual(failures.build([plans[0]], [], {}, retrying, 432, 514, 1).length, 1, 'failure border remains while automatic retry waits')
   tiles[0].src = 'recovered.png'
@@ -568,7 +569,10 @@ function testNativeViewportCulling() {
   state.redrawTiles(center)
   assert.strictEqual(state.visibleTiles.some(function (tile) { return tile.id === bad.id }), false, 'failed URI does not get reinserted on the next redraw')
   var transitions = []
-  rt.tileManager = { setInteracting: function (v) { transitions.push(v) } }
+  rt.tileManager = {
+    setInteracting: function (v) { transitions.push(v) },
+    setPinnedKeys: function () {}
+  }
   state.updateTilePlan = function () {}
   state.refreshLoadingIndicators = function () { assert.fail('pan must not rebuild loading overlays') }
   engine.planVisibleTiles = function () { assert.fail('pan must not replan tiles') }
@@ -615,6 +619,32 @@ function testTileUpdateCoalescing() {
   state.flushPendingTiles()
   assert.strictEqual(redraws, 2, 'release applies the deferred tile snapshot once')
   assert.ok(rt.tiles.length >= 6 && rt.tiles.length <= 12, 'deferred tiles are merged after release')
+}
+
+function testStagedTileReveal() {
+  var harness = createPageHarness(10)
+  var state = harness.state
+  var rt = harness.runtime
+  var engine = harness.engine
+  var center = engine.centerWorld()
+  center.x += 128
+  rt.tiles = engine.planVisibleTiles(center).map(function (t) {
+    t.id = t.key
+    t.src = 'internal://map.png'
+    return t
+  })
+  state.updateMarker = function () {}
+  state.redrawTiles(center)
+  assert.strictEqual(state.visibleTiles.length, Config.REVEAL_TILE_BATCH,
+    'a cache burst only creates one small batch of native image nodes')
+  assert.strictEqual(harness.timers.length, 1, 'the remaining tiles are revealed by a short timer')
+  harness.timers[0]()
+  assert.ok(state.visibleTiles.length > Config.REVEAL_TILE_BATCH &&
+    state.visibleTiles.length <= Config.REVEAL_TILE_BATCH * 2,
+    'the second batch adds the next few tiles without a decode spike')
+  harness.timers[1]()
+  assert.ok(state.visibleTiles.length >= 7, 'all on-screen tiles are revealed eventually')
+  assert.strictEqual(rt.revealPending, false, 'no reveal work is left after the final batch')
 }
 
 function testLocationRecovery() {
@@ -744,12 +774,17 @@ function testTileRequestTimeout() {
   return new Promise(function (resolve, reject) {
     setTimeout(function () {
       try {
-        assert.strictEqual(manager.activeCount, 1, 'a JS timeout must not release an uncancelled native request')
-        manager.retryVisible()
-        assert.strictEqual(network.requests.length, 1, 'retry cannot overlap an outstanding native fetch')
-        assert.ok(statuses.indexOf('地图请求超时 · 等待网络恢复') >= 0, 'timeout is reported to the UI')
+        assert.strictEqual(manager.activeCount, 0, 'a timeout releases the logical request slot')
+        assert.ok(statuses.indexOf('地图请求超时') >= 0, 'timeout is reported to the UI')
+        assert.strictEqual(network.requests.length, 1, 'the hung native request is left alone')
+        assert.ok(manager.queue.length > 0, 'a timed-out tile is queued for retry')
+        manager.queue[0].due = 0
+        manager.pump()
+        assert.strictEqual(network.requests.length, 2, 'a hung request no longer blocks the map forever')
         network.requests[0].success({ code: 200, headers: {}, data: pngHeader() })
-        assert.strictEqual(manager.activeCount, 0, 'a late callback from a timed out request is ignored')
+        assert.strictEqual(manager.activeCount, 1, 'a late abandoned callback does not disturb the new request')
+        assert.strictEqual(manager.memory['timeout:10:1:1'], undefined, 'a late response is not stored')
+        network.requests[1].fail('closed', -1)
         resolve()
       } catch (error) { reject(error) }
       finally {
@@ -774,6 +809,7 @@ testTileLoadingIndicators()
 testAsyncCacheStartup()
 testNativeViewportCulling()
 testTileUpdateCoalescing()
+testStagedTileReveal()
 testLocationRecovery()
 testFailureHistoryBound()
 testPageReentryAndDragging()

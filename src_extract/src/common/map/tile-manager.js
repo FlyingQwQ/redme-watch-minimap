@@ -4,6 +4,10 @@ var isImageBytes = require('./image-metadata')
 var INDEX_VERSION = 1
 // Shared across page instances: fetch has no documented cancellation API.
 var nativeRequests = 0
+// A timed-out native fetch cannot be cancelled. Keep a small bounded number of
+// abandoned requests so one hung socket can never stop the map forever.
+var abandonedRequests = 0
+var MAX_ABANDONED_REQUESTS = 2
 
 function TileManager(network, fileApi, onChange, onStatus, provider) {
   this.provider = provider || { url: Config.TILE_URL }
@@ -33,6 +37,7 @@ function TileManager(network, fileApi, onChange, onStatus, provider) {
   this.pumpTimer = null
   this.planRevision = 0
   this.cooldownUntil = 0
+  this.consecutiveFailures = 0
   this.ephemeralUris = []
   this.pinnedKeys = {}
   this.retiredUris = []
@@ -43,44 +48,61 @@ function TileManager(network, fileApi, onChange, onStatus, provider) {
 
 TileManager.prototype.prepare = function () {
   var self = this
+  var settled = false
+  function finish(ok) {
+    if (settled) return
+    settled = true
+    clearTimeout(timer)
+    if (self.dead) return
+    self.directoryReady = ok
+    self.readIndex()
+  }
+  var timer = setTimeout(function () {
+    self.onStatus('缓存目录初始化超时，改用临时图片')
+    finish(false)
+  }, 3000)
   try {
     this.file.mkdir({
       uri: Config.TILE_DIRECTORY,
       recursive: true,
-      success: function () { self.directoryReady = true; self.readIndex() },
+      success: function () { finish(true) },
       fail: function (data, code) {
-        self.directoryReady = false
         self.onStatus('缓存不可用，地图只在当前运行期间保留')
-        self.readIndex()
+        finish(false)
       }
     })
   } catch (error) {
-    this.readIndex()
+    finish(false)
   }
 }
 
 TileManager.prototype.readIndex = function () {
   var self = this
+  var settled = false
+  var timer = setTimeout(function () { finish(null) }, 3000)
+  function finish(text) {
+    if (settled) return
+    settled = true
+    clearTimeout(timer)
+    if (self.dead) return
+    if (text) {
+      try {
+        var index = JSON.parse(text || '{}')
+        if (index.version === INDEX_VERSION && index.entries && typeof index.entries === 'object') {
+          self.disk = index.entries
+        }
+      } catch (ignored) { self.disk = {} }
+    }
+    self.reconcileFiles()
+  }
   try {
     this.file.readText({
       uri: Config.INDEX_URI,
-      success: function (data) {
-        if (self.dead) return
-        try {
-          var index = JSON.parse(data && data.text ? data.text : '{}')
-          if (index.version === INDEX_VERSION && index.entries && typeof index.entries === 'object') {
-            self.disk = index.entries
-          }
-        } catch (ignored) { self.disk = {} }
-        self.reconcileFiles()
-      },
-      fail: function () {
-        if (self.dead) return
-        self.reconcileFiles()
-      }
+      success: function (data) { finish(data && data.text ? data.text : null) },
+      fail: function () { finish(null) }
     })
   } catch (error) {
-    this.reconcileFiles()
+    finish(null)
   }
 }
 
@@ -90,11 +112,19 @@ TileManager.prototype.reconcileFiles = function () {
     this.finishReadingIndex()
     return
   }
+  var settled = false
+  var timer = setTimeout(function () { finish() }, 3000)
+  function finish() {
+    if (settled) return
+    settled = true
+    clearTimeout(timer)
+    self.finishReadingIndex()
+  }
   try {
     this.file.list({
       uri: Config.TILE_DIRECTORY,
       success: function (result) {
-        if (self.dead) return
+        if (self.dead) { finish(); return }
         var files = result && result.fileList ? result.fileList : []
         var referenced = {}
         var keys = Object.keys(self.disk)
@@ -104,11 +134,11 @@ TileManager.prototype.reconcileFiles = function () {
         for (var j = 0; j < files.length; j += 1) {
           if (files[j] && files[j].uri && !referenced[files[j].uri]) self.deleteFile(files[j].uri)
         }
-        self.finishReadingIndex()
+        finish()
       },
-      fail: function () { self.finishReadingIndex() }
+      fail: function () { finish() }
     })
-  } catch (error) { this.finishReadingIndex() }
+  } catch (error) { finish() }
 }
 
 TileManager.prototype.finishReadingIndex = function () {
@@ -157,6 +187,7 @@ TileManager.prototype.destroy = function () {
 TileManager.prototype.setProvider = function (provider) {
   this.provider = provider
   this.cooldownUntil = 0
+  this.consecutiveFailures = 0
 }
 
 TileManager.prototype.setPlan = function (plans) {
@@ -223,39 +254,59 @@ TileManager.prototype.resolveDesired = function (skipPublish) {
 TileManager.prototype.checkDiskEntry = function (plan, entry) {
   var self = this
   var key = plan.key
+  var settled = false
+  var timer = null
   this.accessing[key] = true
+  function finish(callback) {
+    if (settled) return
+    settled = true
+    clearTimeout(timer)
+    delete self.accessing[key]
+    if (self.dead) return
+    callback()
+  }
+  timer = setTimeout(function () {
+    finish(function () {
+      delete self.disk[key]
+      self.markIndexDirty()
+      self.enqueue(self.desiredByKey[key] || plan, null, false)
+      self.publish()
+      self.pump()
+    })
+  }, 2000)
   try {
     this.file.access({
       uri: entry.uri,
       success: function () {
-        delete self.accessing[key]
-        if (self.dead) return
-        var usable = self.disk[key]
-        if (!usable) return
-        usable.used = Date.now()
-        self.memory[key] = usable
-        self.touchMemory(key)
-        if (usable.expires <= Date.now()) self.enqueue(self.desiredByKey[key] || plan, usable, false)
-        self.trimMemory()
-        self.publish()
-        self.pump()
+        finish(function () {
+          var usable = self.disk[key]
+          if (!usable) return
+          usable.used = Date.now()
+          self.memory[key] = usable
+          self.touchMemory(key)
+          if (usable.expires <= Date.now()) self.enqueue(self.desiredByKey[key] || plan, usable, false)
+          self.trimMemory()
+          self.publish()
+          self.pump()
+        })
       },
       fail: function () {
-        delete self.accessing[key]
-        if (self.dead) return
-        delete self.disk[key]
-        self.markIndexDirty()
-        var latest = self.desiredByKey[key]
-        if (latest) self.enqueue(latest, null, false)
-        self.publish()
-        self.pump()
+        finish(function () {
+          delete self.disk[key]
+          self.markIndexDirty()
+          var latest = self.desiredByKey[key]
+          if (latest) self.enqueue(latest, null, false)
+          self.publish()
+          self.pump()
+        })
       }
     })
   } catch (error) {
-    delete this.accessing[key]
-    delete this.disk[key]
-    this.markIndexDirty()
-    this.enqueue(this.desiredByKey[key] || plan, null, false)
+    finish(function () {
+      delete self.disk[key]
+      self.markIndexDirty()
+      self.enqueue(self.desiredByKey[key] || plan, null, false)
+    })
   }
 }
 
@@ -302,7 +353,7 @@ TileManager.prototype.pump = function () {
     return
   }
   if (this.activeCount >= Config.REQUEST_CONCURRENCY || !this.queue.length) return
-  if (nativeRequests >= Config.REQUEST_CONCURRENCY) {
+  if (nativeRequests >= Config.REQUEST_CONCURRENCY || abandonedRequests >= MAX_ABANDONED_REQUESTS) {
     this.schedulePump(300)
     return
   }
@@ -337,12 +388,20 @@ TileManager.prototype.dispatchNetwork = function (job, options) {
   var success = options.success
   var fail = options.fail
   job.fetchPending = true
+  job.counted = true
   nativeRequests += 1
   function settle(callback, data, code) {
     if (finished) return
     finished = true
     job.fetchPending = false
-    nativeRequests = Math.max(0, nativeRequests - 1)
+    if (job.abandoned) {
+      job.abandoned = false
+      abandonedRequests = Math.max(0, abandonedRequests - 1)
+    }
+    if (job.counted) {
+      job.counted = false
+      nativeRequests = Math.max(0, nativeRequests - 1)
+    }
     callback(data, code)
     self.pump()
   }
@@ -440,16 +499,34 @@ TileManager.prototype.handleResponse = function (job, response) {
     this.finishFailure(job, '地图图片格式或尺寸无效', 404, null)
     return
   }
-  var buffer = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+  // Copy into an exact-length Uint8Array: Vela may hand back a view whose
+  // backing buffer is larger than the tile, and writing the whole buffer
+  // produces a corrupt image file.
+  var buffer = new Uint8Array(bytes)
+  var extension = buffer.length > 1 && buffer[0] === 0xFF && buffer[1] === 0xD8 ? '.jpg' : '.png'
   this.fileVersion += 1
-  var uri = Config.TILE_DIRECTORY + safeFileName(job.key) + '-' + Date.now() + '-' + this.fileVersion + '.png'
+  var uri = Config.TILE_DIRECTORY + safeFileName(job.key) + '-' + Date.now() + '-' + this.fileVersion + extension
   var self = this
   var record = this.recordForResponse(job, uri, buffer.byteLength, headers)
+  var writeSettled = false
+  var writeTimer = setTimeout(function () {
+    if (writeSettled) return
+    writeSettled = true
+    self.onStatus('瓦片缓存写入超时，改用临时图片')
+    self.deleteFile(uri)
+    self.startFileFallback(job)
+  }, 5000)
   try {
     this.file.writeArrayBuffer({
       uri: uri,
       buffer: buffer,
       success: function () {
+        if (writeSettled) {
+          self.deleteFile(uri)
+          return
+        }
+        writeSettled = true
+        clearTimeout(writeTimer)
         if (self.dead) {
           self.deleteFile(uri)
           return
@@ -462,12 +539,18 @@ TileManager.prototype.handleResponse = function (job, response) {
         self.storeRecord(job, record)
       },
       fail: function () {
+        if (writeSettled) return
+        writeSettled = true
+        clearTimeout(writeTimer)
         self.onStatus('瓦片缓存写入失败，改用临时图片')
         self.deleteFile(uri)
         self.startFileFallback(job)
       }
     })
   } catch (error) {
+    if (writeSettled) return
+    writeSettled = true
+    clearTimeout(writeTimer)
     this.onStatus('手表文件缓存不可用，改用临时图片')
     this.deleteFile(uri)
     this.startFileFallback(job)
@@ -505,6 +588,7 @@ TileManager.prototype.recordForResponse = function (job, uri, byteLength, header
 
 TileManager.prototype.storeRecord = function (job, record) {
   if (this.dead || this.inFlight[job.key] !== job) return
+  this.consecutiveFailures = 0
   delete this.failureCount[job.key]
   delete this.failureRetryAt[job.key]
   delete this.blocked[job.key]
@@ -548,7 +632,13 @@ TileManager.prototype.finishFailure = function (job, message, code, retryAfter) 
   if (this.dead || this.inFlight[job.key] !== job) return
   var count = (this.failureCount[job.key] || 0) + 1
   this.failureCount[job.key] = count
+  this.consecutiveFailures += 1
   this.onStatus(message)
+  if (this.consecutiveFailures >= 3) {
+    // A blocked or dead network otherwise churns through every visible tile.
+    this.cooldownUntil = Math.max(this.cooldownUntil, Date.now() + 10000)
+    this.onStatus('网络连续失败 · 10秒后自动重试')
+  }
   if (code === 403 || code === 404) this.blocked[job.key] = true
   var shouldRetry = code !== 403 && code !== 404 && count <= 2
   var delay = Math.min(30000, 1000 * Math.pow(2, count - 1))
@@ -626,9 +716,16 @@ TileManager.prototype.armWatchdog = function (job) {
   job.watchdog = setTimeout(function () {
     if (self.inFlight[job.key] !== job || self.dead) return
     job.timedOut = true
-    // A JS timer cannot cancel the native fetch. Keep its slot until callback.
-    if (job.fetchPending) self.onStatus('地图请求超时 · 等待网络恢复')
-    else self.finishFailure(job, '地图请求超时', 408, null)
+    // A JS timer cannot cancel the native fetch. Release the logical slot so a
+    // hung socket cannot stall every later tile; a late callback is ignored by
+    // the inFlight identity check.
+    if (job.fetchPending && job.counted) {
+      job.counted = false
+      nativeRequests = Math.max(0, nativeRequests - 1)
+      job.abandoned = true
+      abandonedRequests += 1
+    }
+    self.finishFailure(job, '地图请求超时', 408, null)
   }, Config.REQUEST_TIMEOUT_MS)
 }
 
@@ -670,7 +767,8 @@ TileManager.prototype.trimDisk = function () {
     var memoryIndex = this.memoryOrder.indexOf(removeKey)
     if (memoryIndex >= 0) this.memoryOrder.splice(memoryIndex, 1)
     keys.splice(keys.indexOf(removeKey), 1)
-    this.deleteFile(entry.uri)
+    // Never delete a byte range that a native <image> may still be decoding.
+    this.retireUri(entry.uri, removeKey)
     this.markIndexDirty()
   }
 }
@@ -726,7 +824,7 @@ TileManager.prototype.cleanupUndesiredEphemeral = function () {
     var memoryIndex = this.memoryOrder.indexOf(key)
     if (memoryIndex >= 0) this.memoryOrder.splice(memoryIndex, 1)
     if (!record.temporary) {
-      this.deleteFile(record.uri)
+      this.retireUri(record.uri, key)
       var uriIndex = this.ephemeralUris.indexOf(record.uri)
       if (uriIndex >= 0) this.ephemeralUris.splice(uriIndex, 1)
     }
@@ -743,41 +841,58 @@ TileManager.prototype.flushIndex = function () {
   this.indexWriting = true
   this.indexDirty = false
   var self = this
+  var settled = false
+  var timer = setTimeout(function () {
+    if (settled) return
+    settled = true
+    self.indexWriting = false
+    self.indexDirty = true
+    self.onStatus('地图缓存索引保存超时')
+  }, 3000)
   var text = JSON.stringify({ version: INDEX_VERSION, entries: this.disk })
   try {
     this.file.writeText({
       uri: Config.INDEX_URI,
       text: text,
       success: function () {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
         self.indexWriting = false
         if (self.indexDirty) self.flushIndex()
       },
       fail: function () {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
         self.indexWriting = false
         self.onStatus('地图缓存索引无法保存')
       }
     })
   } catch (error) {
+    if (settled) return
+    settled = true
+    clearTimeout(timer)
     this.indexWriting = false
     this.onStatus('地图缓存索引不可用')
   }
 }
 
 TileManager.prototype.retryVisible = function (force, preferFile) {
+  this.consecutiveFailures = 0
+  this.cooldownUntil = 0
   for (var i = 0; i < this.desired.length; i += 1) {
     var plan = this.desired[i]
     var record = this.memory[plan.key]
     if (force && record) {
-      if (record.noStore && this.pinnedKeys[plan.key]) this.retireUri(record.uri, plan.key)
-      else if (record.noStore && !record.temporary) this.deleteFile(record.uri)
+      if (record.noStore && !record.temporary) this.retireUri(record.uri, plan.key)
       var ephemeralIndex = this.ephemeralUris.indexOf(record.uri)
       if (ephemeralIndex >= 0) this.ephemeralUris.splice(ephemeralIndex, 1)
       delete this.memory[plan.key]
       var memoryIndex = this.memoryOrder.indexOf(plan.key)
       if (memoryIndex >= 0) this.memoryOrder.splice(memoryIndex, 1)
       if (this.disk[plan.key]) {
-        if (this.pinnedKeys[plan.key]) this.retireUri(this.disk[plan.key].uri, plan.key)
-        else this.deleteFile(this.disk[plan.key].uri)
+        this.retireUri(this.disk[plan.key].uri, plan.key)
         delete this.disk[plan.key]
         this.markIndexDirty()
       }
