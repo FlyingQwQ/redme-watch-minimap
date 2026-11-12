@@ -1,0 +1,1054 @@
+<template>
+  <stack id="map-root" class="map-root" style="width: {{viewWidth}}px; height: {{viewHeight}}px;" ontouchstart="onMapTouchStart" ontouchmove="onMapTouchMove" ontouchend="onMapTouchEnd" onlongpress="openSettings">
+    <stack class="tile-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
+      <image for="{{visibleTiles}}" tid="id" class="map-tile" alt="blank" src="{{$item.src}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.width}}px; height: {{$item.height}}px;" oncomplete="onTileImageComplete($item.id, $item.src)" onerror="onTileImageError($item.id, $item.src)"></image>
+    </stack>
+    <stack class="failure-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
+      <div for="{{failedTiles}}" tid="id" class="failed-tile" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.width}}px; height: {{$item.height}}px;"></div>
+    </stack>
+    <stack class="loading-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
+      <stack for="{{loadingIndicators}}" tid="id" class="tile-loading" style="left: {{$item.left}}px; top: {{$item.top}}px;">
+        <div class="tile-loading-ring" style="border-color: {{$item.color}};"></div>
+        <text class="tile-loading-label" style="color: {{$item.color}};">{{$item.label}}</text>
+      </stack>
+    </stack>
+
+    <stack class="marker-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
+      <div if="{{markerVisible}}" class="position-halo" style="left: {{markerLeft}}px; top: {{markerTop}}px;"></div>
+      <div if="{{markerVisible}}" class="position-dot" style="left: {{dotLeft}}px; top: {{dotTop}}px;"></div>
+    </stack>
+
+    <stack class="controls-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
+      <div class="status-card" style="left: 14px; top: 12px; width: {{statusWidth}}px;" onclick="retryTiles" ontouchstart="onUiTouchStart">
+        <text class="status-text">{{statusText}}</text>
+      </div>
+
+      <div class="map-control recenter-control" style="left: {{controlLeft}}px; top: {{recenterTop}}px;" onclick="recenter" ontouchstart="onUiTouchStart">
+        <text class="control-glyph locate-glyph">◎</text>
+      </div>
+      <div class="map-control zoom-control" style="left: {{controlLeft}}px; top: {{zoomInTop}}px;" onclick="zoomIn" ontouchstart="onUiTouchStart">
+        <text class="control-glyph">+</text>
+      </div>
+      <div class="map-control zoom-control" style="left: {{controlLeft}}px; top: {{zoomOutTop}}px;" onclick="zoomOut" ontouchstart="onUiTouchStart">
+        <text class="control-glyph zoom-minus">−</text>
+      </div>
+
+      <div if="{{!hideBottomHint}}" class="attribution" style="left: 12px; top: {{attributionTop}}px; width: {{attributionWidth}}px;" ontouchstart="onUiTouchStart">
+        <text class="attribution-text">{{mapAttribution}}</text>
+      </div>
+    </stack>
+  </stack>
+</template>
+
+<script>
+import fetch from '@system.fetch'
+import file from '@system.file'
+import device from '@system.device'
+import brightness from '@system.brightness'
+import router from '@system.router'
+import storage from '@system.storage'
+import geolocation from '@system.geolocation'
+import Config from '../../common/map/config'
+import Projection from '../../common/map/projection'
+import MapEngine from '../../common/map/engine'
+import TileManager from '../../common/map/tile-manager'
+import TileLayout from '../../common/map/tile-layout'
+import LocationManager from '../../common/map/location-manager'
+import Gestures from '../../common/map/gesture-controller'
+import LoadingIndicators from '../../common/map/loading-indicators'
+import TileFailures from '../../common/map/tile-failures'
+import PanInput from '../../common/map/pan-input'
+import PanLayout from '../../common/map/pan-layout'
+import Preferences from '../../common/map/preferences'
+import Providers from '../../common/map/providers'
+
+var DRAG_START_DISTANCE = 5
+var DRAG_RENDER_DELAY = 80
+var TILE_APPLY_DELAY = 50
+var PINCH_IN_THRESHOLD = 1.3
+var PINCH_OUT_THRESHOLD = 0.77
+
+// Vela recursively observes every property declared in private/protected/data.
+// Large runtime objects (engine, tile manager, gesture buffers) must stay outside
+// the view model or every touch and every tile callback re-enters the observer.
+var runtime = createRuntimeState()
+
+function createRuntimeState() {
+  return {
+    sourceId: 'osmfr-v1',
+    showLoadingIndicators: true,
+    preferencesReady: false,
+    preferencesGeneration: 0,
+    openingSettings: false,
+    engine: null,
+    tileManager: null,
+    locationManager: null,
+    locationFix: null,
+    followLocation: true,
+    runtimeReady: false,
+    pageVisible: true,
+    pageShown: false,
+    disposed: false,
+    viewport: { left: 0, top: 0, width: 432, height: 514 },
+    tileSize: 256,
+    screenWidth: 432,
+    screenDensity: 1,
+    physicalScreenWidth: 432,
+    pixelScale: 1,
+    layoutMeasured: false,
+    layoutSignature: '',
+    layoutTimer: null,
+    dragTimer: null,
+    tileApplyTimer: null,
+    pendingTiles: null,
+    pendingRequired: 0,
+    pendingLoaded: 0,
+    lastZoomAt: 0,
+    lastManualRetryAt: 0,
+    gesture: null,
+    panInput: null,
+    pinch: null,
+    uiTouchActive: false,
+    requiredTileCount: 0,
+    loadedTileCount: 0,
+    imageErrorCount: 0,
+    lastTileStatus: '',
+    gpsStatus: '等待定位',
+    tiles: [],
+    failureRecords: [],
+    imageReady: {},
+    imageErrors: {}
+  }
+}
+
+function collectGarbage() {
+  try {
+    if (typeof global !== 'undefined' && global && typeof global.runGC === 'function') global.runGC()
+  } catch (ignored) {}
+}
+
+function sameRenderNodes(previous, next) {
+  if (previous.length !== next.length) return false
+  for (var i = 0; i < next.length; i += 1) {
+    var a = previous[i]
+    var b = next[i]
+    if (a.id !== b.id || a.left !== b.left || a.top !== b.top ||
+        a.width !== b.width || a.height !== b.height) return false
+  }
+  return true
+}
+
+export default {
+  private: {
+    hideBottomHint: false,
+    viewWidth: 432,
+    viewHeight: 514,
+    statusWidth: 220,
+    attributionWidth: 300,
+    attributionTop: 476,
+    controlLeft: 360,
+    recenterTop: 284,
+    zoomInTop: 350,
+    zoomOutTop: 418,
+    visibleTiles: [],
+    loadingIndicators: [],
+    failedTiles: [],
+    markerVisible: false,
+    markerLeft: 0,
+    markerTop: 0,
+    dotLeft: 0,
+    dotTop: 0,
+    statusText: '地图加载中',
+    mapAttribution: Config.TILE_ATTRIBUTION
+  },
+
+  onReady() {
+    runtime = createRuntimeState()
+    runtime.panInput = PanInput.create()
+    runtime.engine = new MapEngine({
+      sourceId: runtime.sourceId,
+      zoom: Config.INITIAL_ZOOM,
+      latitude: Config.INITIAL_CENTER.latitude,
+      longitude: Config.INITIAL_CENTER.longitude
+    })
+    var self = this
+    runtime.layoutTimer = setTimeout(function () { self.finalizeLayout() }, 500)
+    this.readDeviceInfo()
+    if (runtime.pageShown) this.measureViewport()
+  },
+
+  onShow() {
+    var state = runtime
+    if (state.disposed) return
+    this.setScreenAwake(true)
+    state.openingSettings = false
+    state.pageShown = true
+    state.pageVisible = true
+    this.loadPreferences()
+    this.measureViewport()
+    if (state.runtimeReady && state.preferencesReady) this.startRuntime()
+  },
+
+  onHide() {
+    var state = runtime
+    this.setScreenAwake(false)
+    state.pageVisible = false
+    state.preferencesGeneration += 1
+    state.uiTouchActive = false
+    state.pendingTiles = null
+    if (state.tileApplyTimer !== null) clearTimeout(state.tileApplyTimer)
+    state.tileApplyTimer = null
+    if (state.tileManager) state.tileManager.setVisible(false)
+    this.cancelGesture()
+    if (state.locationManager) state.locationManager.stop()
+  },
+
+  onDestroy() {
+    var state = runtime
+    this.setScreenAwake(false)
+    state.disposed = true
+    state.pageVisible = false
+    this.cancelGesture()
+    if (state.layoutTimer !== null) clearTimeout(state.layoutTimer)
+    if (state.dragTimer !== null) clearTimeout(state.dragTimer)
+    if (state.tileApplyTimer !== null) clearTimeout(state.tileApplyTimer)
+    state.layoutTimer = null
+    state.dragTimer = null
+    state.tileApplyTimer = null
+    state.pendingTiles = null
+    if (state.tileManager) state.tileManager.destroy()
+    if (state.locationManager) state.locationManager.stop()
+    state.tileManager = null
+    state.locationManager = null
+    state.engine = null
+    state.tiles = []
+    state.failureRecords = []
+    state.imageReady = {}
+    state.imageErrors = {}
+    state.gesture = null
+    state.pinch = null
+    state.pendingTiles = null
+    collectGarbage()
+  },
+
+  setScreenAwake(enabled) {
+    try {
+      brightness.setKeepScreenOn({
+        keepScreenOn: enabled,
+        fail: function (data, code) {
+          console.log('Map keep-screen-on failed', code, String(data))
+        }
+      })
+    } catch (error) {
+      console.log('Map keep-screen-on unavailable', String(error))
+    }
+  },
+
+  openSettings() {
+    var state = runtime
+    if (!state.pageVisible || state.disposed || state.openingSettings || state.uiTouchActive || (state.gesture && state.gesture.moved)) return
+    state.openingSettings = true
+    this.cancelGesture(true)
+    try { router.push({ uri: '/pages/settings' }) }
+    catch (error) { state.openingSettings = false; this.statusText = '设置页面打开失败' }
+  },
+
+  loadPreferences() {
+    var self = this
+    var state = runtime
+    var generation = ++state.preferencesGeneration
+    state.preferencesReady = false
+    Preferences.load(storage, function (value) {
+      if (state.disposed || !state.pageVisible || generation !== state.preferencesGeneration) return
+      var changed = state.sourceId !== value.sourceId
+      state.sourceId = value.sourceId
+      self.hideBottomHint = value.hideBottomHint
+      state.showLoadingIndicators = value.showLoadingIndicators
+      self.mapAttribution = Providers.get(value.sourceId).attribution
+      state.preferencesReady = true
+      if (state.engine) state.engine.sourceId = value.sourceId
+      if (changed) {
+        state.layoutSignature = ''
+        if (state.tileManager) state.tileManager.setProvider(Providers.get(value.sourceId))
+        state.tiles = []
+        state.failureRecords = []
+        state.imageReady = {}
+        state.imageErrors = {}
+        state.lastTileStatus = ''
+        self.visibleTiles = []
+        self.failedTiles = []
+        self.loadingIndicators = []
+      }
+      self.finalizeLayout()
+      if (state.runtimeReady) self.startRuntime()
+    })
+  },
+
+  readDeviceInfo() {
+    var self = this
+    var state = runtime
+    try {
+      device.getInfo({
+        success: function (info) {
+          if (state.disposed || !info) return
+          if (Number(info.screenWidth) > 0) state.screenWidth = Number(info.screenWidth)
+          if (Number(info.screenDensity) > 0) state.screenDensity = Number(info.screenDensity)
+          self.finalizeLayout()
+        },
+        fail: function () { self.finalizeLayout() }
+      })
+    } catch (error) { this.finalizeLayout() }
+  },
+
+  measureViewport() {
+    var self = this
+    var state = runtime
+    try {
+      this.$element('map-root').getBoundingClientRect({
+        success: function (rect) {
+          if (state.disposed || !rect || !(rect.width > 0) || !(rect.height > 0)) return
+          state.viewport = {
+            left: Number(rect.left) || 0,
+            top: Number(rect.top) || 0,
+            width: Number(rect.width),
+            height: Number(rect.height)
+          }
+          state.layoutMeasured = true
+          self.finalizeLayout()
+        },
+        fail: function () { self.finalizeLayout() }
+      })
+    } catch (error) { this.finalizeLayout() }
+  },
+
+  finalizeLayout() {
+    var state = runtime
+    if (state.disposed || !state.engine || !state.pageShown || !state.preferencesReady) return
+    if (state.layoutTimer !== null) {
+      clearTimeout(state.layoutTimer)
+      state.layoutTimer = null
+    }
+    if (!state.layoutMeasured) {
+      state.viewport = { left: 0, top: 0, width: 432, height: 514 }
+    }
+    this.viewWidth = state.viewport.width
+    this.viewHeight = state.viewport.height
+    state.physicalScreenWidth = TileLayout.physicalScreenWidth({
+      screenWidth: state.screenWidth,
+      screenDensity: state.screenDensity
+    }, Config.DESIGN_WIDTH)
+    state.pixelScale = TileLayout.pixelScale(this.viewWidth, state.physicalScreenWidth)
+    state.tileSize = TileLayout.styleTileSize(Config.TILE_RASTER_SIZE, state.pixelScale)
+    state.engine.setViewport(this.viewWidth, this.viewHeight, state.tileSize)
+    this.updateLayoutControls()
+    var signature = this.viewWidth + 'x' + this.viewHeight + ':' + state.tileSize + ':' +
+      state.pixelScale + ':' + state.sourceId
+    if (signature === state.layoutSignature) return
+    state.layoutSignature = signature
+    if (!state.runtimeReady) this.createMapRuntime()
+    else this.updateTilePlan()
+  },
+
+  updateLayoutControls() {
+    var state = runtime
+    var width = state.viewport.width
+    var height = state.viewport.height
+    this.statusWidth = Math.max(150, Math.min(250, width - 106))
+    this.controlLeft = Math.max(10, width - 70)
+    this.recenterTop = Math.max(72, height - 230)
+    this.zoomInTop = Math.max(136, height - 164)
+    this.zoomOutTop = Math.max(200, height - 96)
+    this.attributionTop = Math.max(10, height - 40)
+    this.attributionWidth = Math.max(190, width - 106)
+  },
+
+  createMapRuntime() {
+    var state = runtime
+    if (state.runtimeReady || state.disposed) return
+    var self = this
+    state.tileManager = new TileManager(fetch, file, function (tiles, requiredCount, loadedCount) {
+      self.onTileManagerChange(tiles, requiredCount, loadedCount)
+    }, function (message) {
+      if (state.disposed) return
+      state.lastTileStatus = message
+      if (state.tileManager) self.refreshLoadingIndicators()
+      self.statusText = state.locationFix ? '定位 · ' + message : message
+    }, Providers.get(state.sourceId))
+    state.locationManager = new LocationManager(geolocation, function (fix) {
+      if (state.disposed) return
+      state.locationFix = fix
+      if (state.followLocation) {
+        state.engine.setCenter(fix.latitude, fix.longitude)
+        if (state.gesture && !state.gesture.moved) {
+          state.gesture.centerWorld = state.engine.centerWorld()
+          state.gesture.currentWorld = state.gesture.centerWorld
+        }
+        self.updateTilePlan()
+      }
+      self.updateMarker(state.gesture && state.gesture.moved ? state.gesture.currentWorld : null)
+      self.statusText = fix.accuracy !== null && fix.accuracy > 100 ? '已定位 · 精度较低' : '已定位'
+    }, function (message) {
+      if (!state.disposed) { state.gpsStatus = message; self.statusText = message }
+    })
+    state.tileManager.setViewportSize(this.viewWidth, this.viewHeight)
+    state.tileManager.setVisible(state.pageVisible)
+    state.runtimeReady = true
+    this.updateTilePlan()
+    if (state.pageVisible) state.locationManager.start()
+  },
+
+  startRuntime() {
+    var state = runtime
+    if (state.disposed || !state.runtimeReady) return
+    state.pageVisible = true
+    if (state.tileManager) {
+      state.tileManager.setVisible(true)
+      state.tileManager.publish()
+      this.updateTilePlan()
+    }
+    if (state.locationManager) state.locationManager.start()
+  },
+
+  onTileManagerChange(tiles, requiredCount, loadedCount) {
+    var state = runtime
+    if (state.disposed || !state.pageVisible) return
+    state.pendingTiles = tiles
+    state.pendingRequired = requiredCount
+    state.pendingLoaded = loadedCount
+    if (state.tileApplyTimer !== null) return
+    var self = this
+    state.tileApplyTimer = setTimeout(function () {
+      state.tileApplyTimer = null
+      self.applyTileChange()
+    }, TILE_APPLY_DELAY)
+  },
+
+  applyTileChange() {
+    var state = runtime
+    if (state.disposed || !state.pageVisible || !state.engine || !state.pendingTiles) return
+    // Defer the whole merge until the finger is up: merging new tile metadata
+    // during a pan lets PanLayout insert fresh <image> nodes mid-gesture.
+    if (state.gesture || state.pinch) return
+    var tiles = state.pendingTiles
+    state.pendingTiles = null
+    state.requiredTileCount = state.pendingRequired
+    state.loadedTileCount = state.pendingLoaded
+    var center = state.engine.centerWorld()
+    state.tiles = TileLayout.mergeVisibleTiles(
+      tiles,
+      state.tiles,
+      center,
+      state.engine.zoom,
+      state.tileSize,
+      this.viewWidth,
+      this.viewHeight,
+      state.pixelScale
+    )
+    this.redrawTiles()
+    if (!state.locationFix) {
+      if (state.loadedTileCount > 0 && state.loadedTileCount >= state.requiredTileCount) {
+        state.lastTileStatus = ''
+        this.statusText = state.gpsStatus || '默认位置 · 香港'
+      } else if (state.requiredTileCount > 0 && !state.lastTileStatus) {
+        this.statusText = '地图加载中 ' + state.loadedTileCount + '/' + state.requiredTileCount
+      }
+    }
+  },
+
+  flushPendingTiles() {
+    var state = runtime
+    if (state.tileApplyTimer !== null) {
+      clearTimeout(state.tileApplyTimer)
+      state.tileApplyTimer = null
+    }
+    if (state.pendingTiles) this.applyTileChange()
+  },
+
+  updateTilePlan(centerWorld) {
+    var state = runtime
+    if (!state.tileManager || !state.engine || state.disposed) return
+    state.tileManager.setViewportSize(this.viewWidth, this.viewHeight)
+    state.tileManager.setPlan(state.engine.planVisibleTiles(
+      centerWorld || state.engine.centerWorld(),
+      state.tileSize * Config.EDGE_BUFFER_RATIO
+    ))
+    this.redrawTiles(centerWorld)
+  },
+
+  redrawTiles(centerWorld) {
+    var state = runtime
+    if (!state.engine) return
+    var center = centerWorld || (state.gesture && state.gesture.moved ? state.gesture.currentWorld : state.engine.centerWorld())
+    var width = this.viewWidth
+    var height = this.viewHeight
+    var size = state.tileSize
+    var previous = this.visibleTiles
+    var previousById = null
+    var visible = []
+    for (var i = 0; i < state.tiles.length; i += 1) {
+      var tile = state.tiles[i]
+      if (tile.z !== state.engine.zoom) continue
+      if (state.imageErrors[tile.id] === tile.src) continue
+      var left
+      var top
+      var tileWidth
+      var tileHeight
+      if (state.pinch && state.pinch.active) {
+        var factor = Math.pow(2, state.pinch.zoom - tile.z)
+        var tileWorldX = tile.unwrappedX * size * factor
+        var tileWorldY = tile.y * size * factor
+        var pinchLeft = state.pinch.currentCentroid.x + (tileWorldX - state.pinch.anchorWorld.x) * state.pinch.scale
+        var pinchTop = state.pinch.currentCentroid.y + (tileWorldY - state.pinch.anchorWorld.y) * state.pinch.scale
+        var pinchSize = size * factor * state.pinch.scale
+        var pinchRect = TileLayout.snappedRect(pinchLeft, pinchTop, pinchSize, state.pixelScale)
+        left = pinchRect.left
+        top = pinchRect.top
+        tileWidth = pinchRect.width
+        tileHeight = pinchRect.height
+      } else {
+        var rect = TileLayout.layoutTile(tile, center, size, width, height, state.pixelScale)
+        left = rect.left
+        top = rect.top
+        tileWidth = rect.width
+        tileHeight = rect.height
+      }
+      if (left + tileWidth <= 0 || top + tileHeight <= 0 || left >= width || top >= height) continue
+      if (!previousById) {
+        previousById = {}
+        for (var p = 0; p < previous.length; p += 1) previousById[previous[p].id] = previous[p]
+      }
+      var node = previousById[tile.id]
+      if (!node || node.src !== tile.src) {
+        node = { id: tile.id, src: tile.src, left: 0, top: 0, width: 0, height: 0 }
+      }
+      node.left = left
+      node.top = top
+      node.width = tileWidth
+      node.height = tileHeight
+      visible.push(node)
+    }
+    var same = visible.length === previous.length
+    for (var v = 0; same && v < visible.length; v += 1) {
+      if (visible[v] !== previous[v]) same = false
+    }
+    if (!same) this.visibleTiles = visible
+    var ready = {}
+    var errors = {}
+    for (var k = 0; k < visible.length; k += 1) {
+      if (state.imageReady[visible[k].id] === visible[k].src) ready[visible[k].id] = visible[k].src
+    }
+    for (var e = 0; e < state.tiles.length; e += 1) {
+      var failed = state.tiles[e]
+      if (state.imageErrors[failed.id] === failed.src) errors[failed.id] = failed.src
+    }
+    state.imageReady = ready
+    state.imageErrors = errors
+    this.refreshLoadingIndicators(center)
+    this.updateMarker(center)
+  },
+
+  refreshLoadingIndicators(centerWorld) {
+    var state = runtime
+    if (state.disposed || !state.engine || !state.pageVisible) return
+    if (state.gesture && state.gesture.moved) {
+      if (this.loadingIndicators.length) this.loadingIndicators = []
+      return
+    }
+    var center = centerWorld || state.engine.centerWorld()
+    var plans = state.engine.planVisibleTiles(center, 0)
+    state.failureRecords = TileFailures.build(plans, state.tiles, state.imageErrors,
+      state.tileManager, this.viewWidth, this.viewHeight, state.pixelScale)
+    var failureNodes = []
+    for (var i = 0; i < state.failureRecords.length; i += 1) {
+      var failure = state.failureRecords[i]
+      failureNodes.push({
+        id: failure.id,
+        src: 'failure',
+        left: failure.left,
+        top: failure.top,
+        width: failure.width,
+        height: failure.height
+      })
+    }
+    if (!sameRenderNodes(this.failedTiles, failureNodes)) this.failedTiles = failureNodes
+    if (!state.showLoadingIndicators) {
+      if (this.loadingIndicators.length) this.loadingIndicators = []
+      return
+    }
+    var indicators = LoadingIndicators.build(
+      plans, this.visibleTiles, state.imageReady, state.imageErrors,
+      state.tileManager, this.viewWidth, this.viewHeight
+    )
+    var indicatorNodes = []
+    for (var j = 0; j < indicators.length; j += 1) {
+      var indicator = indicators[j]
+      indicatorNodes.push({
+        id: indicator.id,
+        left: indicator.left,
+        top: indicator.top,
+        color: indicator.color,
+        label: indicator.label
+      })
+    }
+    if (!sameRenderNodes(this.loadingIndicators, indicatorNodes)) this.loadingIndicators = indicatorNodes
+  },
+
+  onTileImageComplete(id, src) {
+    var state = runtime
+    if (state.disposed || !state.pageVisible) return
+    for (var i = 0; i < this.visibleTiles.length; i += 1) {
+      if (this.visibleTiles[i].id === id && this.visibleTiles[i].src === src) {
+        state.imageReady[id] = src
+        delete state.imageErrors[id]
+        this.refreshLoadingIndicators()
+        return
+      }
+    }
+  },
+
+  updateMarker(centerWorld) {
+    var state = runtime
+    if (!state.engine || !state.locationFix) {
+      if (this.markerVisible) this.markerVisible = false
+      return
+    }
+    var point
+    if (state.pinch && state.pinch.active) {
+      var projected = Projection.lonLatToWorld(
+        state.locationFix.longitude,
+        state.locationFix.latitude,
+        state.pinch.zoom,
+        state.tileSize
+      )
+      point = {
+        x: state.pinch.currentCentroid.x + (projected.x - state.pinch.anchorWorld.x) * state.pinch.scale,
+        y: state.pinch.currentCentroid.y + (projected.y - state.pinch.anchorWorld.y) * state.pinch.scale
+      }
+    } else {
+      point = state.engine.markerScreenPoint(state.locationFix.latitude, state.locationFix.longitude, centerWorld)
+    }
+    if (!point) {
+      if (this.markerVisible) this.markerVisible = false
+      return
+    }
+    var haloLeft = point.x - 20
+    var haloTop = point.y - 20
+    var dotLeft = point.x - 9
+    var dotTop = point.y - 9
+    if (!this.markerVisible) this.markerVisible = true
+    if (this.markerLeft !== haloLeft) this.markerLeft = haloLeft
+    if (this.markerTop !== haloTop) this.markerTop = haloTop
+    if (this.dotLeft !== dotLeft) this.dotLeft = dotLeft
+    if (this.dotTop !== dotTop) this.dotTop = dotTop
+  },
+
+  syncPanInput() {
+    var state = runtime
+    if (!state.gesture || !state.gesture.moved || !state.panInput) return false
+    var dx = Math.round(state.panInput.getX() * state.pixelScale) / state.pixelScale
+    var dy = Math.round(state.panInput.getY() * state.pixelScale) / state.pixelScale
+    if (dx === state.gesture.deltaX && dy === state.gesture.deltaY) return false
+    state.gesture.deltaX = dx
+    state.gesture.deltaY = dy
+    state.gesture.currentWorld = state.engine.panCenterWorld(state.gesture.centerWorld, dx, dy)
+    return true
+  },
+
+  redrawPanTiles() {
+    var state = runtime
+    if (!state.gesture || !state.gesture.moved) return
+    var center = state.gesture.currentWorld
+    var visible = PanLayout.update(state.tiles, this.visibleTiles, center,
+      state.engine.zoom, state.tileSize, this.viewWidth, this.viewHeight,
+      state.pixelScale, state.imageErrors)
+    if (visible !== this.visibleTiles) this.visibleTiles = visible
+    var failed = PanLayout.update(state.failureRecords, this.failedTiles, center,
+      state.engine.zoom, state.tileSize, this.viewWidth, this.viewHeight, state.pixelScale)
+    if (failed !== this.failedTiles) this.failedTiles = failed
+    this.updateMarker(center)
+  },
+
+  renderDragTranslation() {
+    var state = runtime
+    if (!state.gesture || !state.gesture.moved) return
+    if (!this.syncPanInput()) return
+    this.redrawPanTiles()
+  },
+
+  zoomIn() {
+    this.changeZoom(runtime.engine.zoom + 1)
+  },
+
+  zoomOut() {
+    this.changeZoom(runtime.engine.zoom - 1)
+  },
+
+  changeZoom(nextZoom) {
+    var state = runtime
+    if (!state.engine || state.disposed) return
+    var zoom = Math.max(Config.MIN_ZOOM, Math.min(Config.MAX_ZOOM, Math.round(nextZoom)))
+    if (zoom === state.engine.zoom || Date.now() - state.lastZoomAt < 600) return
+    state.lastZoomAt = Date.now()
+    if (state.tileManager) state.tileManager.setInteracting(true)
+    this.cancelGesture(true)
+    state.engine.zoomAround(zoom, this.viewWidth / 2, this.viewHeight / 2)
+    this.updateTilePlan()
+    if (state.tileManager) state.tileManager.setInteracting(false)
+  },
+
+  recenter() {
+    var state = runtime
+    if (!state.engine || state.disposed) return
+    state.followLocation = true
+    if (!state.locationFix) {
+      this.statusText = '正在请求当前位置'
+      if (state.locationManager) state.locationManager.requestOnce()
+      return
+    }
+    this.cancelGesture()
+    state.engine.setCenter(state.locationFix.latitude, state.locationFix.longitude)
+    this.updateTilePlan()
+    this.statusText = '已回到当前位置'
+    if (state.locationManager) state.locationManager.requestOnce()
+  },
+
+  onUiTouchStart() {
+    runtime.uiTouchActive = true
+    this.cancelGesture()
+  },
+
+  onMapTouchStart(event) {
+    var state = runtime
+    if (state.uiTouchActive || state.openingSettings || !state.engine || !state.pageVisible) return
+    if (!state.panInput) state.panInput = PanInput.create()
+    state.panInput.reset()
+    if (event && event.touches && event.touches.length >= 2) {
+      this.startPinch(event)
+      return
+    }
+    var touch = Gestures.getTouch(event)
+    var point = Gestures.getPoint(touch, state.viewport)
+    if (!point) return
+    state.gesture = {
+      identifier: point.identifier,
+      startX: point.x,
+      startY: point.y,
+      deltaX: 0,
+      deltaY: 0,
+      moved: false,
+      centerWorld: state.engine.centerWorld(),
+      currentWorld: state.engine.centerWorld()
+    }
+  },
+
+  onMapTouchMove(event) {
+    var state = runtime
+    if (state.uiTouchActive || !state.pageVisible) return
+    if (state.pinch && state.pinch.active) {
+      this.movePinch(event)
+      return
+    }
+    if (event && event.touches && event.touches.length >= 2) {
+      this.startPinch(event)
+      return
+    }
+    if (!state.gesture) return
+    var touch = Gestures.getTouch(event, state.gesture.identifier)
+    if (!touch) return
+    var dx = Number(touch.clientX) - state.viewport.left - state.gesture.startX
+    var dy = Number(touch.clientY) - state.viewport.top - state.gesture.startY
+    if (!isFinite(dx) || !isFinite(dy)) return
+    state.panInput.set(dx, dy)
+    if (!state.gesture.moved) {
+      if (dx * dx + dy * dy < DRAG_START_DISTANCE * DRAG_START_DISTANCE) return
+      state.gesture.moved = true
+      if (state.tileManager) state.tileManager.setInteracting(true)
+      state.followLocation = false
+      if (this.loadingIndicators.length) this.loadingIndicators = []
+    }
+    this.scheduleDragRender()
+  },
+
+  onMapTouchEnd(event) {
+    var state = runtime
+    if (state.uiTouchActive) {
+      state.uiTouchActive = false
+      return
+    }
+    if (state.pinch && state.pinch.active) {
+      this.finishPinch(event)
+      return
+    }
+    if (!state.gesture) return
+    this.syncPanInput()
+    var gesture = state.gesture
+    if (gesture.moved) {
+      state.engine.commitWorldCenter(gesture.currentWorld)
+      state.gesture = null
+      this.flushPendingTiles()
+      this.updateTilePlan()
+      this.updateStatusForFollow()
+    } else {
+      state.gesture = null
+      this.flushPendingTiles()
+    }
+    if (state.dragTimer !== null) clearTimeout(state.dragTimer)
+    state.dragTimer = null
+    if (state.tileManager) state.tileManager.setInteracting(false)
+  },
+
+  scheduleDragRender() {
+    var state = runtime
+    if (state.dragTimer !== null) return
+    var self = this
+    state.dragTimer = setTimeout(function () {
+      state.dragTimer = null
+      if (state.pinch && state.pinch.active) self.redrawTiles(state.pinch.centerWorld)
+      else self.renderDragTranslation()
+    }, DRAG_RENDER_DELAY)
+  },
+
+  startPinch(event) {
+    if (!Config.ENABLE_PINCH_PREVIEW) return
+    var state = runtime
+    if (!event || !event.touches || event.touches.length < 2 || !state.engine) return
+    var first = Gestures.getPoint(event.touches[0], state.viewport)
+    var second = Gestures.getPoint(event.touches[1], state.viewport)
+    if (!first || !second) return
+    if (state.gesture && state.gesture.moved) state.engine.commitWorldCenter(state.gesture.currentWorld)
+    state.gesture = null
+    this.redrawTiles(state.engine.centerWorld())
+    var centerWorld = state.engine.centerWorld()
+    var middle = Gestures.midpoint(first, second)
+    state.pinch = {
+      active: true,
+      ids: [first.identifier, second.identifier],
+      zoom: state.engine.zoom,
+      centerWorld: centerWorld,
+      anchorWorld: state.engine.worldAtScreen(middle.x, middle.y, centerWorld),
+      startCentroid: middle,
+      currentCentroid: middle,
+      startDistance: Gestures.distance(first, second),
+      scale: 1
+    }
+    state.followLocation = false
+  },
+
+  movePinch(event) {
+    var state = runtime
+    var firstTouch = Gestures.getTouch(event, state.pinch.ids[0])
+    var secondTouch = Gestures.getTouch(event, state.pinch.ids[1])
+    var first = Gestures.getPoint(firstTouch, state.viewport)
+    var second = Gestures.getPoint(secondTouch, state.viewport)
+    if (!first || !second) return
+    state.pinch.currentCentroid = Gestures.midpoint(first, second)
+    state.pinch.scale = Gestures.pinchScale(state.pinch.startDistance, Gestures.distance(first, second))
+    this.scheduleDragRender()
+  },
+
+  finishPinch(event) {
+    var state = runtime
+    var pinch = state.pinch
+    if (!pinch) return
+    var scale = pinch.scale
+    var remaining = event && event.touches ? event.touches : []
+    var nextZoom = pinch.zoom
+    if (scale >= PINCH_IN_THRESHOLD) nextZoom = Math.min(Config.MAX_ZOOM, pinch.zoom + 1)
+    else if (scale <= PINCH_OUT_THRESHOLD) nextZoom = Math.max(Config.MIN_ZOOM, pinch.zoom - 1)
+    var committedScale = nextZoom === pinch.zoom ? 1 : scale
+    var nextCenter = Gestures.centerAfterPinch(
+      pinch.anchorWorld,
+      pinch.startCentroid,
+      pinch.currentCentroid,
+      committedScale,
+      pinch.zoom,
+      nextZoom,
+      this.viewWidth,
+      this.viewHeight
+    )
+    state.engine.zoom = nextZoom
+    state.engine.commitWorldCenter(nextCenter)
+    state.pinch = null
+    this.updateTilePlan()
+    if (remaining.length === 1) {
+      var point = Gestures.getPoint(remaining[0], state.viewport)
+      if (point) {
+        var centerWorld = state.engine.centerWorld()
+        state.gesture = {
+          identifier: point.identifier,
+          startX: point.x,
+          startY: point.y,
+          deltaX: 0,
+          deltaY: 0,
+          moved: false,
+          centerWorld: centerWorld,
+          currentWorld: centerWorld
+        }
+      }
+    } else {
+      state.followLocation = false
+      this.updateStatusForFollow()
+    }
+  },
+
+  cancelGesture(deferResume) {
+    var state = runtime
+    this.syncPanInput()
+    if (state.gesture && state.gesture.moved && state.engine) state.engine.commitWorldCenter(state.gesture.currentWorld)
+    state.gesture = null
+    state.pinch = null
+    if (state.dragTimer !== null) clearTimeout(state.dragTimer)
+    state.dragTimer = null
+    if (state.engine && state.tileManager && !state.disposed && state.pageVisible && !deferResume) this.updateTilePlan()
+    if (!deferResume && state.tileManager) state.tileManager.setInteracting(false)
+  },
+
+  updateStatusForFollow() {
+    var state = runtime
+    if (state.followLocation) this.statusText = '位置跟随已开启'
+    else if (state.locationFix) this.statusText = '自由浏览地图'
+    else this.statusText = '默认位置 · 香港'
+  },
+
+  retryTiles() {
+    var state = runtime
+    if (!state.tileManager || state.disposed) return
+    var now = Date.now()
+    if (now - state.lastManualRetryAt < 2500) return
+    state.lastManualRetryAt = now
+    state.lastTileStatus = ''
+    state.imageErrorCount = 0
+    this.statusText = '正在重试地图加载'
+    state.tileManager.retryVisible(true, true)
+  },
+
+  onTileImageError(id, src) {
+    var state = runtime
+    if (state.disposed || !state.pageVisible) return
+    for (var i = 0; i < this.visibleTiles.length; i += 1) {
+      if (this.visibleTiles[i].id === id && this.visibleTiles[i].src === src) {
+        state.imageErrors[id] = src
+        delete state.imageReady[id]
+        if (!state.gesture && !state.pinch) this.redrawTiles()
+        break
+      }
+    }
+    state.imageErrorCount += 1
+    this.statusText = '地图图片显示失败 · 点按重试'
+  }
+}
+
+</script>
+
+<style>
+.map-root {
+  width: 100%;
+  height: 100%;
+  background-color: #111719;
+}
+.failure-layer,
+.loading-layer,
+.tile-layer,
+.marker-layer,
+.controls-layer {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+}
+.failed-tile {
+  position: absolute;
+  border-width: 2px;
+  border-color: #e36d68;
+  background-color: rgba(0, 0, 0, 0);
+}
+.tile-loading {
+  position: absolute;
+  width: 32px;
+  height: 52px;
+}
+.tile-loading-ring {
+  width: 26px;
+  height: 26px;
+  border-width: 3px;
+  border-color: #a8d6df;
+  border-radius: 13px;
+  background-color: rgba(13, 22, 24, 0.5);
+}
+.tile-loading-label {
+  position: absolute;
+  top: 34px;
+  width: 32px;
+  height: 16px;
+  font-size: 11px;
+  text-align: center;
+}
+.map-tile {
+  width: 256px;
+  height: 256px;
+}
+.status-card {
+  height: 38px;
+  padding-left: 12px;
+  padding-right: 12px;
+  border-radius: 14px;
+  background-color: rgba(13, 22, 24, 0.86);
+  justify-content: center;
+}
+.status-text {
+  color: #f4f7f2;
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.map-control {
+  width: 56px;
+  height: 56px;
+  border-radius: 22px;
+  background-color: rgba(250, 252, 250, 0.95);
+  align-items: center;
+  justify-content: center;
+}
+.recenter-control {
+  background-color: #e7f1f8;
+}
+.control-glyph {
+  color: #17333d;
+  font-size: 34px;
+  font-weight: 500;
+  text-align: center;
+}
+.locate-glyph {
+  color: #1769aa;
+  font-size: 34px;
+}
+.zoom-minus {
+  font-size: 38px;
+}
+.position-halo {
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  background-color: rgba(26, 115, 232, 0.28);
+}
+.position-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  border-width: 3px;
+  border-color: #ffffff;
+  background-color: #1a73e8;
+}
+.attribution {
+  height: 27px;
+  padding-left: 9px;
+  padding-right: 9px;
+  border-radius: 9px;
+  background-color: rgba(13, 22, 24, 0.85);
+  justify-content: center;
+}
+.attribution-text {
+  color: #ffffff;
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+</style>

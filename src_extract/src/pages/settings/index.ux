@@ -1,0 +1,113 @@
+<template>
+  <div class="settings-root">
+    <scroll class="settings-scroll" scroll-y="true">
+      <div class="settings-body">
+        <div class="back" onclick="goBack"><text class="back-text">‹ 返回地图</text></div>
+        <text class="title">地图设置</text>
+        <text class="section">地图来源</text>
+        <div class="row" onclick="selectSource('osmfr-v1')">
+          <text class="label">OSM 法国社区</text>
+          <text class="value">{{sourceId === 'osmfr-v1' ? '使用中' : '切换'}}</text>
+        </div>
+        <div class="row" onclick="selectSource('osm-standard-v1')">
+          <text class="label">OSM 标准 · 原图源</text>
+          <text class="value">{{sourceId === 'osm-standard-v1' ? '使用中' : '切换'}}</text>
+        </div>
+        <div if="{{previousSourceId !== '' && previousSourceId !== sourceId}}" class="previous" onclick="usePrevious">
+          <text class="note">切回上次：{{previousName}}</text>
+        </div>
+        <text class="section">显示</text>
+        <div class="row" onclick="toggleBottomHint">
+          <text class="label">隐藏底部提示</text>
+          <text class="value">{{hideBottomHint ? '开启' : '关闭'}}</text>
+        </div>
+        <text class="note">开启后完全隐藏底部内容</text>
+        <div class="row" onclick="toggleLoading">
+          <text class="label">瓦片圆形加载提示</text>
+          <text class="value">{{showLoadingIndicators ? '开启' : '关闭'}}</text>
+        </div>
+        <text class="note">{{saveStatus}}</text>
+      </div>
+    </scroll>
+  </div>
+</template>
+<script>
+import router from '@system.router'
+import storage from '@system.storage'
+import brightness from '@system.brightness'
+import Preferences from '../../common/map/preferences'
+import Providers from '../../common/map/providers'
+export default {
+  private: {
+    sourceId: 'osmfr-v1', previousSourceId: '', previousName: '',
+    hideBottomHint: false, showLoadingIndicators: true,
+    ready: false, saving: false, saveStatus: '正在读取设置', disposed: false
+  },
+  onReady() {
+    var self = this
+    Preferences.load(storage, function (value) {
+      if (self.disposed) return
+      self.applyValues(value)
+      self.ready = true
+      self.saveStatus = '更改自动保存，返回地图后生效'
+    })
+  },
+  onShow() { this.keepAwake(true) },
+  onHide() { this.keepAwake(false) },
+  onDestroy() { this.disposed = true; this.keepAwake(false) },
+  keepAwake(value) {
+    try { brightness.setKeepScreenOn({ keepScreenOn: value }) } catch (ignored) {}
+  },
+  applyValues(value) {
+    this.sourceId = value.sourceId
+    this.previousSourceId = value.previousSourceId
+    this.previousName = value.previousSourceId ? Providers.get(value.previousSourceId).name : ''
+    this.hideBottomHint = value.hideBottomHint
+    this.showLoadingIndicators = value.showLoadingIndicators
+  },
+  currentValues() {
+    return { sourceId: this.sourceId, previousSourceId: this.previousSourceId, hideBottomHint: this.hideBottomHint, showLoadingIndicators: this.showLoadingIndicators }
+  },
+  persist(value) {
+    if (!this.ready || this.saving) return
+    this.saving = true
+    this.saveStatus = '正在保存'
+    var self = this
+    Preferences.save(storage, value, function () {
+      if (self.disposed) return
+      self.applyValues(value)
+      self.saving = false
+      self.saveStatus = '已保存，返回地图后生效'
+    }, function () {
+      if (self.disposed) return
+      self.saving = false
+      self.saveStatus = '保存失败，请重试'
+    })
+  },
+  selectSource(id) {
+    if (!this.ready || this.saving || id === this.sourceId) return
+    var value = this.currentValues()
+    value.previousSourceId = value.sourceId
+    value.sourceId = Providers.get(id).id
+    this.persist(value)
+  },
+  usePrevious() { if (this.previousSourceId) this.selectSource(this.previousSourceId) },
+  toggleBottomHint() { var value = this.currentValues(); value.hideBottomHint = !value.hideBottomHint; this.persist(value) },
+  toggleLoading() { var value = this.currentValues(); value.showLoadingIndicators = !value.showLoadingIndicators; this.persist(value) },
+  goBack() { if (!this.saving) router.back() }
+}
+</script>
+<style>
+.settings-root { width: 100%; height: 100%; background-color: #10191c; }
+.settings-scroll { width: 100%; height: 100%; }
+.settings-body { width: 100%; flex-direction: column; padding: 24px; }
+.back { height: 48px; justify-content: center; }
+.back-text { color: #a8d6df; font-size: 19px; }
+.title { color: #ffffff; font-size: 27px; margin-bottom: 16px; }
+.section { color: #91a6ae; font-size: 15px; margin-top: 12px; margin-bottom: 8px; }
+.row { height: 62px; width: 100%; border-radius: 14px; background-color: #1e2d33; margin-bottom: 8px; padding-left: 14px; padding-right: 14px; align-items: center; justify-content: space-between; }
+.label { color: #ffffff; font-size: 18px; }
+.value { color: #a8d6df; font-size: 16px; }
+.note { color: #a3b6bd; font-size: 14px; margin-bottom: 12px; }
+.previous { min-height: 44px; justify-content: center; }
+</style>

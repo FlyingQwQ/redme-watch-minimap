@@ -1,0 +1,55 @@
+{
+  "package": "com.example.redmiwatch6.map",
+  "name": "街道地图",
+  "versionName": "0.1.14",
+  "versionCode": 15,
+  "minPlatformVersion": 1200,
+  "simulationVersion": "default",
+  "deviceTypeList": [
+    "watch"
+  ],
+  "features": [
+    {
+      "name": "system.fetch"
+    },
+    {
+      "name": "system.file"
+    },
+    {
+      "name": "system.geolocation"
+    },
+    {
+      "name": "system.device"
+    },
+    {
+      "name": "system.brightness"
+    },
+    {
+      "name": "system.storage"
+    },
+    {
+      "name": "system.router"
+    }
+  ],
+  "permissions": [
+    {
+      "name": "hapjs.permission.LOCATION"
+    }
+  ],
+  "config": {
+    "logLevel": "log",
+    "designWidth": 432
+  },
+  "router": {
+    "entry": "pages/index",
+    "pages": {
+      "pages/index": {
+        "component": "index"
+      },
+      "pages/settings": {
+        "component": "index"
+      }
+    }
+  },
+  "icon": "/common/map-icon.png"
+}

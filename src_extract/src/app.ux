@@ -1,0 +1,10 @@
+<script>
+export default {
+  onCreate() {
+    console.log('REDMI Watch 6 Native Map created')
+  },
+  onDestroy() {
+    console.log('REDMI Watch 6 Native Map destroyed')
+  }
+}
+</script>
