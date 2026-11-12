@@ -403,8 +403,8 @@ function testFailureBorders() {
   assert.strictEqual(result.length, 2, 'only visible failed tiles get borders, valid cached images remain unmarked')
   assert.strictEqual(result[0].id, 'network')
   assert.strictEqual(result[1].id, 'decode')
-  assert.strictEqual(result[1].width, 176, 'partially visible borders are clipped to the viewport')
-  assert.ok(result.every(function (node) { return node.left >= 0 && node.top >= 0 && node.left + node.width <= 432 && node.top + node.height <= 514 }), 'no failure border extends outside the viewport')
+  assert.strictEqual(result[1].width, 256, 'border follows complete tile geometry so pan updates stay aligned')
+  assert.ok(result.every(function (node) { return node.left < 432 && node.top < 514 && node.left + node.width > 0 && node.top + node.height > 0 }), 'only viewport-intersecting tiles get borders')
   var retrying = { getTileState: function () { return 'queued' }, hasTileFailure: function () { return true } }
   assert.strictEqual(failures.build([plans[0]], [], {}, retrying, 432, 514, 1).length, 1, 'failure border remains while automatic retry waits')
   tiles[0].src = 'recovered.png'
@@ -621,6 +621,12 @@ function testTileUpdateCoalescing() {
   assert.ok(rt.tiles.length >= 6 && rt.tiles.length <= 12, 'deferred tiles are merged after release')
 }
 
+function testBackGestureConsumed() {
+  var harness = createPageHarness(10)
+  assert.strictEqual(harness.state.onBackPress(), true,
+    'the root map page consumes the right-swipe back gesture instead of exiting')
+}
+
 function testStagedTileReveal() {
   var harness = createPageHarness(10)
   var state = harness.state
@@ -809,6 +815,7 @@ testTileLoadingIndicators()
 testAsyncCacheStartup()
 testNativeViewportCulling()
 testTileUpdateCoalescing()
+testBackGestureConsumed()
 testStagedTileReveal()
 testLocationRecovery()
 testFailureHistoryBound()

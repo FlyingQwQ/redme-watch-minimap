@@ -193,6 +193,16 @@ export default {
     if (state.runtimeReady && state.preferencesReady) this.startRuntime()
   },
 
+  onBackPress() {
+    var state = runtime
+    if (state.disposed) return false
+    // The map is the root page. Consume the watch's right-swipe/back gesture so
+    // panning the map cannot exit to the app list. Exit from Settings instead.
+    if (state.gesture || state.pinch) this.cancelGesture()
+    state.settingsPending = false
+    return true
+  },
+
   onHide() {
     var state = runtime
     this.setScreenAwake(false)

@@ -27,6 +27,12 @@
           <text class="value">{{showLoadingIndicators ? '开启' : '关闭'}}</text>
         </div>
         <text class="note">{{saveStatus}}</text>
+        <text class="section">应用</text>
+        <div class="row" onclick="exitApp">
+          <text class="label">退出应用</text>
+          <text class="value">关闭地图</text>
+        </div>
+        <text class="note">地图页已拦截右滑返回，可从设置退出</text>
       </div>
     </scroll>
   </div>
@@ -94,7 +100,10 @@ export default {
   usePrevious() { if (this.previousSourceId) this.selectSource(this.previousSourceId) },
   toggleBottomHint() { var value = this.currentValues(); value.hideBottomHint = !value.hideBottomHint; this.persist(value) },
   toggleLoading() { var value = this.currentValues(); value.showLoadingIndicators = !value.showLoadingIndicators; this.persist(value) },
-  goBack() { if (!this.saving) router.back() }
+  goBack() { if (!this.saving) router.back() },
+  exitApp() {
+    try { this.$app.exit() } catch (error) { router.back() }
+  }
 }
 </script>
 <style>
