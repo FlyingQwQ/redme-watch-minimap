@@ -2,6 +2,7 @@
   <stack id="map-root" class="map-root" style="width: {{viewWidth}}px; height: {{viewHeight}}px;" ontouchstart="onMapTouchStart" ontouchmove="onMapTouchMove" ontouchend="onMapTouchEnd" onlongpress="openSettings">
     <stack class="tile-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
       <image for="{{tileSlots}}" tid="tid" class="map-tile" alt="blank" src="{{$item.src}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.drawWidth}}px; height: {{$item.drawHeight}}px; opacity: {{$item.opacity}};" oncomplete="onTileImageComplete($item.id, $item.src)" onerror="onTileImageError($item.id, $item.src)"></image>
+      <image for="{{tileSlots}}" tid="overlayTid" class="map-tile map-label" alt="blank" src="{{$item.overlaySrc}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.overlayDrawWidth}}px; height: {{$item.overlayDrawHeight}}px; opacity: {{$item.overlayOpacity}};"></image>
     </stack>
     <stack class="failure-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
       <div for="{{failedTiles}}" tid="tid" class="failed-tile" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.width}}px; height: {{$item.height}}px;"></div>
@@ -83,6 +84,10 @@ function createRuntimeState() {
     openingSettings: false,
     engine: null,
     tileManager: null,
+    overlayManager: null,
+    overlayPrefix: '',
+    overlayTiles: [],
+    pendingOverlayTiles: null,
     locationManager: null,
     locationFix: null,
     followLocation: true,
@@ -157,7 +162,21 @@ function srcTag(src) {
 function emptyTileSlots() {
   var slots = []
   for (var i = 0; i < Config.TILE_SLOT_COUNT; i += 1) {
-    slots.push({ tid: 's' + i + '_e', id: '', src: '', left: 0, top: 0, drawWidth: 0, drawHeight: 0, opacity: 0 })
+    slots.push({
+      tid: 's' + i + '_e',
+      id: '',
+      src: '',
+      left: 0,
+      top: 0,
+      drawWidth: 0,
+      drawHeight: 0,
+      opacity: 0,
+      overlayTid: 'o' + i + '_e',
+      overlaySrc: '',
+      overlayDrawWidth: 0,
+      overlayDrawHeight: 0,
+      overlayOpacity: 0
+    })
   }
   return slots
 }
@@ -232,6 +251,7 @@ export default {
     state.preferencesGeneration += 1
     state.uiTouchActive = false
     state.pendingTiles = null
+    state.pendingOverlayTiles = null
     state.settingsPending = false
     if (state.tileApplyTimer !== null) clearTimeout(state.tileApplyTimer)
     state.tileApplyTimer = null
@@ -240,6 +260,10 @@ export default {
       state.tileManager.setVisible(false)
       state.tileManager.setPinnedKeys([])
     }
+    if (state.overlayManager) {
+      state.overlayManager.setVisible(false)
+      state.overlayManager.setPinnedKeys([])
+    }
     state.pinnedSignature = ''
     state.revealPending = false
     if (state.revealTimer !== null) clearTimeout(state.revealTimer)
@@ -247,6 +271,7 @@ export default {
     // Drop every native image node while the page is hidden (settings page,
     // screen off). The tile metadata stays cached and is republished on show.
     state.tiles = []
+    state.overlayTiles = []
     state.failureRecords = []
     state.imageReady = {}
     state.imageErrors = {}
@@ -278,6 +303,7 @@ export default {
     state.revealPending = false
     state.pendingTiles = null
     if (state.tileManager) state.tileManager.destroy()
+    this.destroyOverlayManager()
     if (state.locationManager) state.locationManager.stop()
     state.tileManager = null
     state.locationManager = null
@@ -336,28 +362,35 @@ export default {
     Preferences.load(storage, function (value) {
       if (state.disposed || !state.pageVisible || generation !== state.preferencesGeneration) return
       var changed = state.sourceId !== value.sourceId
+      var provider = Providers.get(value.sourceId)
       state.sourceId = value.sourceId
       self.hideBottomHint = value.hideBottomHint
       state.showLoadingIndicators = value.showLoadingIndicators
-      self.mapAttribution = Providers.get(value.sourceId).attribution
+      self.mapAttribution = provider.attribution
       state.preferencesReady = true
       if (state.engine) state.engine.sourceId = value.sourceId
       if (changed) {
         state.layoutSignature = ''
         state.pinnedSignature = ''
         if (state.tileManager) {
-          state.tileManager.setProvider(Providers.get(value.sourceId))
+          state.tileManager.setProvider(provider)
           state.tileManager.setPinnedKeys([])
         }
         state.tiles = []
+        state.overlayTiles = []
+        state.pendingTiles = null
+        state.pendingOverlayTiles = null
         state.failureRecords = []
         state.imageReady = {}
         state.imageErrors = {}
         state.imageRetries = {}
         state.lastTileStatus = ''
+        self.tileSlots = emptyTileSlots()
         self.visibleTiles = []
         self.failedTiles = []
         self.loadingIndicators = []
+        self.destroyOverlayManager()
+        if (state.runtimeReady) self.createOverlayManager(provider)
       }
       self.finalizeLayout()
       if (state.runtimeReady) self.startRuntime()
@@ -477,11 +510,40 @@ export default {
     })
     state.tileManager.setViewportSize(this.viewWidth, this.viewHeight)
     state.tileManager.setVisible(state.pageVisible)
+    this.createOverlayManager(Providers.get(state.sourceId))
     state.runtimeReady = true
     this.updateTilePlan()
     this.updateTileDiagnostics()
     this.scheduleAutoRetry()
     if (state.pageVisible) state.locationManager.start()
+  },
+
+  createOverlayManager(provider) {
+    var state = runtime
+    this.destroyOverlayManager()
+    if (state.disposed || !provider || !provider.overlayUrl) return
+    var self = this
+    state.overlayPrefix = provider.id + '-labels:'
+    state.overlayManager = new TileManager(fetch, file, function (tiles) {
+      self.onOverlayManagerChange(tiles)
+    }, function () {}, {
+      url: provider.overlayUrl,
+      subdomains: provider.overlaySubdomains || provider.subdomains,
+      headers: provider.overlayHeaders || provider.headers,
+      directory: Config.OVERLAY_TILE_DIRECTORY,
+      indexUri: Config.OVERLAY_INDEX_URI
+    })
+    state.overlayManager.setViewportSize(this.viewWidth, this.viewHeight)
+    state.overlayManager.setVisible(state.pageVisible)
+  },
+
+  destroyOverlayManager() {
+    var state = runtime
+    if (state.overlayManager) state.overlayManager.destroy()
+    state.overlayManager = null
+    state.overlayPrefix = ''
+    state.overlayTiles = []
+    state.pendingOverlayTiles = null
   },
 
   startRuntime() {
@@ -495,6 +557,10 @@ export default {
       this.updateTileDiagnostics()
       this.scheduleAutoRetry()
     }
+    if (state.overlayManager) {
+      state.overlayManager.setVisible(true)
+      state.overlayManager.publish()
+    }
     if (state.locationManager) state.locationManager.start()
   },
 
@@ -507,6 +573,18 @@ export default {
     this.updateTileDiagnostics()
     if (loadedCount > 0) this.clearAutoRetry()
     else if (requiredCount > 0) this.scheduleAutoRetry()
+    this.scheduleTileApply()
+  },
+
+  onOverlayManagerChange(tiles) {
+    var state = runtime
+    if (state.disposed || !state.pageVisible) return
+    state.pendingOverlayTiles = tiles
+    this.scheduleTileApply()
+  },
+
+  scheduleTileApply() {
+    var state = runtime
     if (state.tileApplyTimer !== null) return
     var self = this
     state.tileApplyTimer = setTimeout(function () {
@@ -517,26 +595,35 @@ export default {
 
   applyTileChange() {
     var state = runtime
-    if (state.disposed || !state.pageVisible || !state.engine || !state.pendingTiles) return
+    var hasBase = !!state.pendingTiles
+    var hasOverlay = state.pendingOverlayTiles !== null
+    if (state.disposed || !state.pageVisible || !state.engine || (!hasBase && !hasOverlay)) return
     // Defer the whole merge until the finger is up: merging new tile metadata
     // during a pan lets PanLayout insert fresh <image> nodes mid-gesture.
     if (state.gesture || state.pinch) return
-    var tiles = state.pendingTiles
-    state.pendingTiles = null
-    state.requiredTileCount = state.pendingRequired
-    state.loadedTileCount = state.pendingLoaded
-    var center = state.engine.centerWorld()
-    state.tiles = TileLayout.mergeVisibleTiles(
-      tiles,
-      state.tiles,
-      center,
-      state.engine.zoom,
-      state.tileSize,
-      this.viewWidth,
-      this.viewHeight,
-      state.pixelScale
-    )
+    if (hasOverlay) {
+      state.overlayTiles = state.pendingOverlayTiles
+      state.pendingOverlayTiles = null
+    }
+    if (hasBase) {
+      var tiles = state.pendingTiles
+      state.pendingTiles = null
+      state.requiredTileCount = state.pendingRequired
+      state.loadedTileCount = state.pendingLoaded
+      var center = state.engine.centerWorld()
+      state.tiles = TileLayout.mergeVisibleTiles(
+        tiles,
+        state.tiles,
+        center,
+        state.engine.zoom,
+        state.tileSize,
+        this.viewWidth,
+        this.viewHeight,
+        state.pixelScale
+      )
+    }
     this.redrawTiles()
+    if (!hasBase) return
     this.updateTileDiagnostics()
     if (state.loadedTileCount > 0) this.clearAutoRetry()
     else if (state.requiredTileCount > 0) this.scheduleAutoRetry()
@@ -586,11 +673,17 @@ export default {
   },
 
   applyTileSlots(visible) {
+    var state = runtime
     var previous = this.tileSlots || []
+    var labels = {}
     var byTile = {}
     var used = {}
     var seen = {}
     var i
+    for (i = 0; i < state.overlayTiles.length; i += 1) {
+      var labelTile = state.overlayTiles[i]
+      labels[labelTile.z + '_' + labelTile.x + '_' + labelTile.y] = labelTile
+    }
     for (i = 0; i < previous.length; i += 1) {
       if (previous[i].id) byTile[previous[i].id] = i
     }
@@ -607,6 +700,8 @@ export default {
       }
       if (index >= slots.length) break
       used[index] = true
+      var label = labels[tile.z + '_' + tile.x + '_' + tile.y]
+      var overlaySrc = label ? label.src : ''
       slots[index] = {
         // The tid must change when the slot's tile changes. Keeping a fixed
         // "slot_i" makes Vela reuse the same native image node, and its old
@@ -619,7 +714,12 @@ export default {
         top: tile.top,
         drawWidth: tile.drawWidth,
         drawHeight: tile.drawHeight,
-        opacity: 1
+        opacity: 1,
+        overlayTid: overlaySrc ? 'o' + index + '_' + srcTag(overlaySrc) : 'o' + index + '_e',
+        overlaySrc: overlaySrc,
+        overlayDrawWidth: overlaySrc ? tile.drawWidth : 0,
+        overlayDrawHeight: overlaySrc ? tile.drawHeight : 0,
+        overlayOpacity: overlaySrc ? 1 : 0
       }
     }
     this.tileSlots = slots
@@ -631,17 +731,22 @@ export default {
       clearTimeout(state.tileApplyTimer)
       state.tileApplyTimer = null
     }
-    if (state.pendingTiles) this.applyTileChange()
+    if (state.pendingTiles || state.pendingOverlayTiles !== null) this.applyTileChange()
   },
 
   updateTilePlan(centerWorld) {
     var state = runtime
     if (!state.tileManager || !state.engine || state.disposed) return
     state.tileManager.setViewportSize(this.viewWidth, this.viewHeight)
-    state.tileManager.setPlan(state.engine.planVisibleTiles(
+    var plans = state.engine.planVisibleTiles(
       centerWorld || state.engine.centerWorld(),
       state.tileSize * Config.EDGE_BUFFER_RATIO
-    ))
+    )
+    state.tileManager.setPlan(plans)
+    if (state.overlayManager) {
+      state.overlayManager.setViewportSize(this.viewWidth, this.viewHeight)
+      state.overlayManager.setPlan(plans, state.overlayPrefix)
+    }
     this.redrawTiles(centerWorld)
   },
 

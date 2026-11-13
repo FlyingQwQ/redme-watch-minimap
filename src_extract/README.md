@@ -253,6 +253,14 @@ GPS 单次请求最长等待 60 秒，结束后再启动订阅，不同时发起
 
 `applyTileSlots` 按瓦片 id 复用上一次的槽位：拖动时同一张瓦片尽量留在原槽位，新进入的瓦片占用空槽，离开的瓦片将槽位清空（`src=''`、宽高 0、`opacity=0`）。每个瓦片 id 在一次分配中只允许出现一次，避免任何重复渲染。12 个槽位覆盖 432×514 视口所需的 3 列 × 3–4 行。
 
+## 0.1.27 接入天地图底图与注记
+
+新增 `tianditu-v1` 图源：矢量底图 `vec_w` + 注记层 `cva_w`，在设置页“地图来源”中切换。天地图是双层 WMTS，底图和注记使用两个 `TileManager`：底图缓存仍放在 `tiles/`，注记单独放在 `labels/`，索引也分开，避免两个管理器互相覆盖缓存索引。注记请求通过 `setPlan(plans, keyPrefix)` 加独立的 key 前缀，不会和底图 key 冲突。
+
+天地图 Key 是浏览器端类型，请求必须带 `Referer: https://www.tianditu.gov.cn/`，`TileManager` 现在支持 provider 自定义 header。若手表端 fetch 丢失 Referer，天地图会返回 301012 JSON；`isImageBytes` 会拒绝它并报“地图图片格式或尺寸无效”，此时需要在天地图控制台新建服务端 Key 替换 `providers.js` 中的 Key。
+
+注记层复用固定 12 个槽位，每个槽位增加独立的 `overlayTid`、`overlaySrc`、`overlayOpacity`；`overlayTid` 同样跟随注记 `src` 变化，避免旧注记位图残留。注记加载失败不会影响底图，也不会触发失败红框。
+
 ## 0.1.26 槽位 tid 跟随瓦片身份
 
 0.1.25 的槽位 tid 固定为 `slot_i`，Vela 会把不同瓦片当成同一个原生 image 节点复用；缓存 URI 带 `Date.now()`，同一瓦片重新下载后 `src` 变化，旧位图可能留在槽位里，看起来像两张相同瓦片。0.1.26 把 tid 改为 `s{槽位}_{z}_{x}_{y}_{srcHash}`，空槽位为 `s{槽位}_e`：槽位里的瓦片或图源一变，tid 就变，Vela 必须销毁旧节点、创建新节点，旧位图不可能留在新位置。同一瓦片、同一 `src` 留在原槽位时 tid 不变，不会每帧重建。新增测试校验槽位 tid 唯一、跟随瓦片身份、`src` 变化时 tid 变化。

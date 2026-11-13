@@ -8,7 +8,7 @@ module.exports = {
   TILE_SOURCE_ID: 'osmfr-v1',
   TILE_URL: 'https://a.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png',
   TILE_ATTRIBUTION: '© OpenStreetMap / ODbL · Tiles: OSM France',
-  USER_AGENT: 'RedmiWatch6NativeMap/0.1.26 (Xiaomi Vela)',
+  USER_AGENT: 'RedmiWatch6NativeMap/0.1.27 (Xiaomi Vela)',
   REQUEST_CONCURRENCY: 1,
   REQUEST_TIMEOUT_MS: 15000,
   // Native image decodes are the largest memory spike on a 30MB watch.
@@ -24,5 +24,7 @@ module.exports = {
   DEFAULT_CACHE_SECONDS: 604800,
   CACHE_DIRECTORY: 'internal://files/redmi-watch6-map/',
   TILE_DIRECTORY: 'internal://files/redmi-watch6-map/tiles/',
-  INDEX_URI: 'internal://files/redmi-watch6-map/index.json'
+  INDEX_URI: 'internal://files/redmi-watch6-map/index.json',
+  OVERLAY_TILE_DIRECTORY: 'internal://files/redmi-watch6-map/labels/',
+  OVERLAY_INDEX_URI: 'internal://files/redmi-watch6-map/labels-index.json'
 }

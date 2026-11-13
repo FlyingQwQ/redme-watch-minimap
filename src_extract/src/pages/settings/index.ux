@@ -13,6 +13,10 @@
           <text class="label">OSM 标准 · 原图源</text>
           <text class="value">{{sourceId === 'osm-standard-v1' ? '使用中' : '切换'}}</text>
         </div>
+        <div class="row" onclick="selectSource('tianditu-v1')">
+          <text class="label">天地图 · 矢量 + 注记</text>
+          <text class="value">{{sourceId === 'tianditu-v1' ? '使用中' : '切换'}}</text>
+        </div>
         <div if="{{previousSourceId !== '' && previousSourceId !== sourceId}}" class="previous" onclick="usePrevious">
           <text class="note">切回上次：{{previousName}}</text>
         </div>

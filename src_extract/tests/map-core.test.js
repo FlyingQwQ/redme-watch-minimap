@@ -435,6 +435,43 @@ function testPanNodeReuse() {
   assert.ok(next.length > 0)
 }
 
+function testTiandituProvider() {
+  var Providers = require('../src/common/map/providers')
+  var provider = Providers.get('tianditu-v1')
+  assert.strictEqual(provider.id, 'tianditu-v1')
+  assert.ok(provider.url.indexOf('/vec_w/wmts') >= 0, 'Tianditu base uses vec_w WMTS')
+  assert.ok(provider.overlayUrl.indexOf('/cva_w/wmts') >= 0, 'Tianditu overlay uses cva_w WMTS')
+  assert.strictEqual(provider.headers.Referer, 'https://www.tianditu.gov.cn/', 'browser key needs a referer')
+  assert.ok(provider.url.indexOf('{z}') >= 0 && provider.url.indexOf('{x}') >= 0 && provider.url.indexOf('{y}') >= 0)
+
+  var file = makeFileApi()
+  var network = { requests: [], fetch: function (options) { this.requests.push(options) } }
+  var manager = new TileManager(network, file.api, function () {}, function () {}, {
+    url: provider.overlayUrl,
+    subdomains: provider.overlaySubdomains,
+    headers: provider.overlayHeaders,
+    directory: Config.OVERLAY_TILE_DIRECTORY,
+    indexUri: Config.OVERLAY_INDEX_URI
+  })
+  manager.setViewportSize(432, 514)
+  manager.setVisible(true)
+  manager.setPlan([{
+    key: 'tianditu-v1:15:26774:14302', z: 15, x: 26774, unwrappedX: 26774, y: 14302,
+    left: 0, top: 0, size: 256
+  }], 'tianditu-v1-labels:')
+  assert.strictEqual(manager.directory, Config.OVERLAY_TILE_DIRECTORY, 'overlay cache has its own directory')
+  assert.strictEqual(manager.indexUri, Config.OVERLAY_INDEX_URI, 'overlay cache has its own index')
+  assert.strictEqual(manager.desired[0].key, 'tianditu-v1-labels:tianditu-v1:15:26774:14302', 'overlay keys do not collide with base tiles')
+  assert.strictEqual(network.requests.length, 1)
+  assert.ok(network.requests[0].url.indexOf('cva_w') >= 0)
+  assert.ok(network.requests[0].url.indexOf('TILEMATRIX=15') >= 0)
+  assert.ok(network.requests[0].url.indexOf('TILEROW=14302') >= 0)
+  assert.ok(network.requests[0].url.indexOf('TILECOL=26774') >= 0)
+  assert.strictEqual(network.requests[0].header.Referer, 'https://www.tianditu.gov.cn/')
+  network.requests[0].fail('closed', -1)
+  manager.destroy()
+}
+
 function testPreferencesAndProviderSwitch() {
   var Preferences = require('../src/common/map/preferences')
   var Providers = require('../src/common/map/providers')
@@ -569,6 +606,18 @@ function testNativeViewportCulling() {
     }
   })
   var slotTile = state.visibleTiles[0]
+  rt.overlayTiles = [{
+    z: slotTile.z, x: slotTile.x, y: slotTile.y, src: 'internal://files/test-label.png'
+  }]
+  state.applyTileSlots(state.visibleTiles)
+  var labelled = state.tileSlots.filter(function (slot) { return slot.id === slotTile.id })[0]
+  assert.strictEqual(labelled.overlaySrc, 'internal://files/test-label.png', 'label layer follows the base tile coordinate')
+  assert.strictEqual(labelled.overlayOpacity, 1)
+  assert.ok(labelled.overlayTid.indexOf('o') === 0 && labelled.overlayTid.indexOf('_e') < 0, 'label slot has its own native node')
+  rt.overlayTiles = []
+  state.applyTileSlots(state.visibleTiles)
+  labelled = state.tileSlots.filter(function (slot) { return slot.id === slotTile.id })[0]
+  assert.strictEqual(labelled.overlayOpacity, 0, 'label layer is cleared when no label tile is available')
   var tidBefore = state.tileSlots.filter(function (slot) { return slot.id === slotTile.id })[0].tid
   state.applyTileSlots(state.visibleTiles.map(function (tile) {
     return tile.id === slotTile.id ? Object.assign({}, tile, { src: tile.src + '?v=2' }) : tile
@@ -832,6 +881,7 @@ testEngine()
 testGestures()
 testTileLayout()
 testTileManager()
+testTiandituProvider()
 testHongKongDefaultAndMathCaches()
 testFailureBorders()
 testPanNodeReuse()

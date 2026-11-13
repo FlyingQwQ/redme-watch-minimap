@@ -11,6 +11,8 @@ var MAX_ABANDONED_REQUESTS = 2
 
 function TileManager(network, fileApi, onChange, onStatus, provider) {
   this.provider = provider || { url: Config.TILE_URL }
+  this.directory = this.provider.directory || Config.TILE_DIRECTORY
+  this.indexUri = this.provider.indexUri || Config.INDEX_URI
   this.network = network
   this.file = fileApi
   this.onChange = onChange || function () {}
@@ -64,7 +66,7 @@ TileManager.prototype.prepare = function () {
   }, 3000)
   try {
     this.file.mkdir({
-      uri: Config.TILE_DIRECTORY,
+      uri: this.directory,
       recursive: true,
       success: function () { finish(true) },
       fail: function (data, code) {
@@ -98,7 +100,7 @@ TileManager.prototype.readIndex = function () {
   }
   try {
     this.file.readText({
-      uri: Config.INDEX_URI,
+      uri: this.indexUri,
       success: function (data) { finish(data && data.text ? data.text : null) },
       fail: function () { finish(null) }
     })
@@ -123,7 +125,7 @@ TileManager.prototype.reconcileFiles = function () {
   }
   try {
     this.file.list({
-      uri: Config.TILE_DIRECTORY,
+      uri: this.directory,
       success: function (result) {
         if (self.dead) { finish(); return }
         var files = result && result.fileList ? result.fileList : []
@@ -207,8 +209,33 @@ TileManager.prototype.getStats = function () {
   }
 }
 
-TileManager.prototype.setPlan = function (plans) {
-  var nextPlans = plans || []
+function applyProviderHeaders(headers, provider) {
+  var custom = provider && provider.headers
+  if (!custom) return
+  for (var key in custom) {
+    if (Object.prototype.hasOwnProperty.call(custom, key)) headers[key] = custom[key]
+  }
+}
+
+TileManager.prototype.setPlan = function (plans, keyPrefix) {
+  var sourcePlans = plans || []
+  var nextPlans = sourcePlans
+  if (keyPrefix) {
+    nextPlans = []
+    for (var p = 0; p < sourcePlans.length; p += 1) {
+      var plan = sourcePlans[p]
+      nextPlans.push({
+        key: keyPrefix + plan.key,
+        z: plan.z,
+        x: plan.x,
+        unwrappedX: plan.unwrappedX,
+        y: plan.y,
+        left: plan.left,
+        top: plan.top,
+        size: plan.size
+      })
+    }
+  }
   var sameKeys = nextPlans.length === this.desired.length
   if (sameKeys) {
     for (var k = 0; k < nextPlans.length; k += 1) {
@@ -444,6 +471,7 @@ TileManager.prototype.startRequest = function (job) {
     'User-Agent': Config.USER_AGENT,
     'Accept': 'image/png,image/jpeg'
   }
+  applyProviderHeaders(headers, this.provider)
   if (job.stale && job.stale.etag) headers['If-None-Match'] = job.stale.etag
   if (job.stale && job.stale.lastModified) headers['If-Modified-Since'] = job.stale.lastModified
   job.started = Date.now()
@@ -479,6 +507,7 @@ TileManager.prototype.startFileFallback = function (job) {
   this.armWatchdog(job)
   var url = job.url
   var headers = { 'User-Agent': Config.USER_AGENT, 'Accept': 'image/png,image/jpeg' }
+  applyProviderHeaders(headers, this.provider)
   this.onStatus('正在使用临时图片加载地图')
   try {
     this.dispatchNetwork(job, {
@@ -530,7 +559,7 @@ TileManager.prototype.handleResponse = function (job, response) {
   var buffer = new Uint8Array(bytes)
   var extension = buffer.length > 1 && buffer[0] === 0xFF && buffer[1] === 0xD8 ? '.jpg' : '.png'
   this.fileVersion += 1
-  var uri = Config.TILE_DIRECTORY + safeFileName(job.key) + '-' + Date.now() + '-' + this.fileVersion + extension
+  var uri = this.directory + safeFileName(job.key) + '-' + Date.now() + '-' + this.fileVersion + extension
   var self = this
   var record = this.recordForResponse(job, uri, buffer.byteLength, headers)
   var writeSettled = false
@@ -930,7 +959,7 @@ TileManager.prototype.flushIndex = function () {
   var text = JSON.stringify({ version: INDEX_VERSION, entries: this.disk })
   try {
     this.file.writeText({
-      uri: Config.INDEX_URI,
+      uri: this.indexUri,
       text: text,
       success: function () {
         if (settled) return
@@ -991,7 +1020,7 @@ TileManager.prototype.clearEphemeral = function () {
   var keys = Object.keys(this.memory)
   for (var j = 0; j < keys.length; j += 1) {
     if (this.memory[keys[j]].noStore) {
-      if (!this.memory[keys[j]].temporary && this.memory[keys[j]].uri.indexOf(Config.TILE_DIRECTORY) === 0) {
+      if (!this.memory[keys[j]].temporary && this.memory[keys[j]].uri.indexOf(this.directory) === 0) {
         this.deleteFile(this.memory[keys[j]].uri)
       }
       delete this.memory[keys[j]]
