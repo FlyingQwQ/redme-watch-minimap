@@ -7,7 +7,8 @@ function normalize(value) {
     previousSourceId: input.previousSourceId ? Providers.get(input.previousSourceId).id : '',
     hideBottomHint: input.hideBottomHint === true,
     showLoadingIndicators: input.showLoadingIndicators !== false,
-    showStatus: input.showStatus !== false
+    showStatus: input.showStatus !== false,
+    showFailureMarks: input.showFailureMarks !== false
   }
 }
 function load(storage, callback) {

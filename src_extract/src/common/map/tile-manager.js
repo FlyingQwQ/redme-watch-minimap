@@ -542,7 +542,10 @@ TileManager.prototype.handleResponse = function (job, response) {
     return
   }
   var bytes = response.data
-  if (typeof bytes === 'string' && bytes.length > 0) {
+  // responseType 'file' must hand back a temp-file URI. Anything else (an error
+  // page body, "undefined", a plain string) is not displayable by <image>:
+  // reject it here instead of storing a URI the native decoder will reject.
+  if (typeof bytes === 'string' && bytes.indexOf('internal://') === 0) {
     var temporaryRecord = this.recordForResponse(job, bytes, 0, headers)
     temporaryRecord.noStore = true
     temporaryRecord.temporary = true

@@ -3,7 +3,7 @@
     <stack class="tile-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
       <image for="{{tileSlots}}" tid="tid" class="map-tile" alt="blank" src="{{$item.src}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.drawWidth}}px; height: {{$item.drawHeight}}px; opacity: {{$item.opacity}};" oncomplete="onTileImageComplete($item.id, $item.src)" onerror="onTileImageError($item.id, $item.src)"></image>
     </stack>
-    <stack class="failure-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
+    <stack if="{{showFailureMarks}}" class="failure-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
       <div for="{{failedTiles}}" tid="tid" class="failed-tile" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.width}}px; height: {{$item.height}}px;"></div>
     </stack>
     <stack class="loading-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
@@ -202,6 +202,7 @@ export default {
   private: {
     hideBottomHint: false,
     showStatus: true,
+    showFailureMarks: true,
     viewWidth: 432,
     viewHeight: 514,
     statusWidth: 220,
@@ -380,6 +381,7 @@ export default {
       state.sourceId = value.sourceId
       self.hideBottomHint = value.hideBottomHint
       self.showStatus = value.showStatus
+      self.showFailureMarks = value.showFailureMarks
       state.showLoadingIndicators = value.showLoadingIndicators
       self.mapAttribution = provider.attribution
       state.preferencesReady = true

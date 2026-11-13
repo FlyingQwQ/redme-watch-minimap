@@ -42,6 +42,12 @@
             <div class="knob" style="left: {{showLoadingIndicators ? 26 : 2}}px; top: 2px;"></div>
           </stack>
         </div>
+        <div class="row" onclick="toggleFailureMarks">
+          <text class="label">加载失败红框</text>
+          <stack class="switch" style="background-color: {{showFailureMarks ? '#4d8df7' : '#39393d'}};">
+            <div class="knob" style="left: {{showFailureMarks ? 26 : 2}}px; top: 2px;"></div>
+          </stack>
+        </div>
 
         <text class="section">应用</text>
         <div class="row" onclick="exitApp">
@@ -64,7 +70,7 @@ import Providers from '../../common/map/providers'
 export default {
   private: {
     sourceId: 'osmfr-v1', previousSourceId: '', previousName: '',
-    hideBottomHint: false, showLoadingIndicators: true, showStatus: true,
+    hideBottomHint: false, showLoadingIndicators: true, showStatus: true, showFailureMarks: true,
     ready: false, saving: false, saveStatus: '正在读取设置', disposed: false
   },
   onReady() {
@@ -89,9 +95,10 @@ export default {
     this.hideBottomHint = value.hideBottomHint
     this.showLoadingIndicators = value.showLoadingIndicators
     this.showStatus = value.showStatus
+    this.showFailureMarks = value.showFailureMarks
   },
   currentValues() {
-    return { sourceId: this.sourceId, previousSourceId: this.previousSourceId, hideBottomHint: this.hideBottomHint, showLoadingIndicators: this.showLoadingIndicators, showStatus: this.showStatus }
+    return { sourceId: this.sourceId, previousSourceId: this.previousSourceId, hideBottomHint: this.hideBottomHint, showLoadingIndicators: this.showLoadingIndicators, showStatus: this.showStatus, showFailureMarks: this.showFailureMarks }
   },
   persist(value) {
     if (!this.ready || this.saving) return
@@ -118,6 +125,7 @@ export default {
   },
   usePrevious() { if (this.previousSourceId) this.selectSource(this.previousSourceId) },
   toggleStatus() { var value = this.currentValues(); value.showStatus = !value.showStatus; this.persist(value) },
+  toggleFailureMarks() { var value = this.currentValues(); value.showFailureMarks = !value.showFailureMarks; this.persist(value) },
   toggleBottomHint() { var value = this.currentValues(); value.hideBottomHint = !value.hideBottomHint; this.persist(value) },
   toggleLoading() { var value = this.currentValues(); value.showLoadingIndicators = !value.showLoadingIndicators; this.persist(value) },
   goBack() { if (!this.saving) router.back() },
