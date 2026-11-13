@@ -1,62 +1,84 @@
 <template>
   <div class="settings-root">
     <scroll class="settings-scroll" scroll-y="true">
-      <div class="settings-body">
+      <!-- 一级：设置主菜单 -->
+      <div if="{{panel === 'root'}}" class="page">
         <div class="back" onclick="goBack"><text class="back-text">‹ 返回地图</text></div>
         <text class="title">地图设置</text>
 
-        <text class="section">地图来源</text>
+        <div class="menu-row" onclick="goSources">
+          <text class="menu-label">地图来源</text>
+          <text class="menu-value">{{sourceId === 'osmfr-v1' ? 'OSM 法国' : sourceId === 'osm-standard-v1' ? 'OSM 标准' : sourceId === 'tianditu-v1' ? '天地图' : ''}} ›</text>
+        </div>
+        <div class="menu-row" onclick="goDisplay">
+          <text class="menu-label">显示</text>
+          <text class="menu-value">›</text>
+        </div>
+        <div class="menu-row" onclick="exitApp">
+          <text class="menu-label label-danger">退出应用</text>
+          <text class="menu-value">›</text>
+        </div>
+
+        <text class="hint">{{saveStatus}}</text>
+        <text class="hint">地图页已拦截右滑返回，退出请到这里</text>
+      </div>
+
+      <!-- 二级：地图来源 -->
+      <div if="{{panel === 'sources'}}" class="page">
+        <div class="back" onclick="goRoot"><text class="back-text">‹ 地图设置</text></div>
+        <text class="title title-sub">选择地图来源</text>
+
         <div class="row" onclick="selectSource('osmfr-v1')">
           <text class="label">OSM 法国社区</text>
-          <text class="value" style="color: {{sourceId === 'osmfr-v1' ? '#5c9dff' : '#8e8e93'}};">{{sourceId === 'osmfr-v1' ? '使用中' : '切换 ›'}}</text>
+          <div class="radio" style="border-color: {{sourceId === 'osmfr-v1' ? '#5c9dff' : '#5a5a5e'}}; background-color: {{sourceId === 'osmfr-v1' ? '#5c9dff' : '#000000'}};"></div>
         </div>
         <div class="row" onclick="selectSource('osm-standard-v1')">
           <text class="label">OSM 标准</text>
-          <text class="value" style="color: {{sourceId === 'osm-standard-v1' ? '#5c9dff' : '#8e8e93'}};">{{sourceId === 'osm-standard-v1' ? '使用中' : '切换 ›'}}</text>
+          <div class="radio" style="border-color: {{sourceId === 'osm-standard-v1' ? '#5c9dff' : '#5a5a5e'}}; background-color: {{sourceId === 'osm-standard-v1' ? '#5c9dff' : '#000000'}};"></div>
         </div>
         <div class="row" onclick="selectSource('tianditu-v1')">
           <text class="label">天地图</text>
-          <text class="value" style="color: {{sourceId === 'tianditu-v1' ? '#5c9dff' : '#8e8e93'}};">{{sourceId === 'tianditu-v1' ? '使用中' : '切换 ›'}}</text>
+          <div class="radio" style="border-color: {{sourceId === 'tianditu-v1' ? '#5c9dff' : '#5a5a5e'}}; background-color: {{sourceId === 'tianditu-v1' ? '#5c9dff' : '#000000'}};"></div>
         </div>
         <div if="{{previousSourceId !== '' && previousSourceId !== sourceId}}" class="row" onclick="usePrevious">
           <text class="label">切回上次使用</text>
-          <text class="value" style="color: #8e8e93;">{{previousName}}</text>
+          <text class="value">{{previousName}}</text>
         </div>
 
-        <text class="section">显示</text>
+        <text class="hint">{{saveStatus}}</text>
+      </div>
+
+      <!-- 二级：显示 -->
+      <div if="{{panel === 'display'}}" class="page">
+        <div class="back" onclick="goRoot"><text class="back-text">‹ 地图设置</text></div>
+        <text class="title title-sub">显示</text>
+
         <div class="row" onclick="toggleStatus">
           <text class="label">顶部状态信息</text>
           <stack class="switch" style="background-color: {{showStatus ? '#4d8df7' : '#39393d'}};">
-            <div class="knob" style="left: {{showStatus ? 26 : 2}}px; top: 2px;"></div>
+            <div class="knob" style="left: {{showStatus ? 33 : 3}}px; top: 3px;"></div>
           </stack>
         </div>
         <div class="row" onclick="toggleBottomHint">
           <text class="label">底部图源署名</text>
           <stack class="switch" style="background-color: {{hideBottomHint ? '#39393d' : '#4d8df7'}};">
-            <div class="knob" style="left: {{hideBottomHint ? 2 : 26}}px; top: 2px;"></div>
+            <div class="knob" style="left: {{hideBottomHint ? 3 : 33}}px; top: 3px;"></div>
           </stack>
         </div>
         <div class="row" onclick="toggleLoading">
           <text class="label">瓦片加载动画</text>
           <stack class="switch" style="background-color: {{showLoadingIndicators ? '#4d8df7' : '#39393d'}};">
-            <div class="knob" style="left: {{showLoadingIndicators ? 26 : 2}}px; top: 2px;"></div>
+            <div class="knob" style="left: {{showLoadingIndicators ? 33 : 3}}px; top: 3px;"></div>
           </stack>
         </div>
         <div class="row" onclick="toggleFailureMarks">
           <text class="label">加载失败红框</text>
           <stack class="switch" style="background-color: {{showFailureMarks ? '#4d8df7' : '#39393d'}};">
-            <div class="knob" style="left: {{showFailureMarks ? 26 : 2}}px; top: 2px;"></div>
+            <div class="knob" style="left: {{showFailureMarks ? 33 : 3}}px; top: 3px;"></div>
           </stack>
         </div>
 
-        <text class="section">应用</text>
-        <div class="row" onclick="exitApp">
-          <text class="label label-danger">退出应用</text>
-          <text class="value" style="color: #8e8e93;">›</text>
-        </div>
-
         <text class="hint">{{saveStatus}}</text>
-        <text class="hint">地图页已拦截右滑返回，退出请到这里</text>
       </div>
     </scroll>
   </div>
@@ -69,9 +91,10 @@ import Preferences from '../../common/map/preferences'
 import Providers from '../../common/map/providers'
 export default {
   private: {
+    panel: 'root',
     sourceId: 'osmfr-v1', previousSourceId: '', previousName: '',
     hideBottomHint: false, showLoadingIndicators: true, showStatus: true, showFailureMarks: true,
-    ready: false, saving: false, saveStatus: '正在读取设置', disposed: false
+    ready: false, saving: false, saveStatus: '更改自动保存', disposed: false
   },
   onReady() {
     var self = this
@@ -85,6 +108,14 @@ export default {
   onShow() { this.keepAwake(true) },
   onHide() { this.keepAwake(false) },
   onDestroy() { this.disposed = true; this.keepAwake(false) },
+  onBackPress() {
+    // 二级页面先回到主菜单，再由系统返回到地图。
+    if (this.panel !== 'root') {
+      this.panel = 'root'
+      return true
+    }
+    return false
+  },
   keepAwake(value) {
     try { brightness.setKeepScreenOn({ keepScreenOn: value }) } catch (ignored) {}
   },
@@ -116,6 +147,10 @@ export default {
       self.saveStatus = '保存失败，请重试'
     })
   },
+  goBack() { if (!this.saving) router.back() },
+  goRoot() { this.panel = 'root' },
+  goSources() { this.panel = 'sources' },
+  goDisplay() { this.panel = 'display' },
   selectSource(id) {
     if (!this.ready || this.saving || id === this.sourceId) return
     var value = this.currentValues()
@@ -128,7 +163,6 @@ export default {
   toggleFailureMarks() { var value = this.currentValues(); value.showFailureMarks = !value.showFailureMarks; this.persist(value) },
   toggleBottomHint() { var value = this.currentValues(); value.hideBottomHint = !value.hideBottomHint; this.persist(value) },
   toggleLoading() { var value = this.currentValues(); value.showLoadingIndicators = !value.showLoadingIndicators; this.persist(value) },
-  goBack() { if (!this.saving) router.back() },
   exitApp() {
     try { this.$app.exit() } catch (error) { router.back() }
   }
@@ -137,16 +171,20 @@ export default {
 <style>
 .settings-root { width: 100%; height: 100%; background-color: #000000; }
 .settings-scroll { width: 100%; height: 100%; }
-.settings-body { width: 100%; flex-direction: column; padding: 24px 20px 40px 20px; }
-.back { height: 44px; width: 100%; justify-content: flex-start; }
-.back-text { color: #5c9dff; font-size: 18px; }
-.title { color: #ffffff; font-size: 30px; margin-bottom: 18px; }
-.section { color: #8e8e93; font-size: 15px; margin: 12px 8px 10px 8px; }
-.row { height: 66px; width: 100%; border-radius: 20px; background-color: #1c1c1e; margin-bottom: 10px; padding-left: 18px; padding-right: 18px; align-items: center; justify-content: space-between; }
-.label { color: #ffffff; font-size: 19px; }
+.page { width: 100%; flex-direction: column; padding: 24px 26px 48px 26px; }
+.back { height: 60px; width: 100%; justify-content: flex-start; align-items: center; }
+.back-text { color: #5c9dff; font-size: 24px; }
+.title { color: #ffffff; font-size: 40px; margin-bottom: 24px; }
+.title-sub { font-size: 36px; }
+.menu-row { height: 96px; width: 100%; border-radius: 26px; background-color: #1c1c1e; margin-bottom: 14px; padding-left: 22px; padding-right: 22px; align-items: center; justify-content: space-between; }
+.menu-label { color: #ffffff; font-size: 30px; }
+.menu-value { color: #8e8e93; font-size: 26px; }
+.row { height: 96px; width: 100%; border-radius: 26px; background-color: #1c1c1e; margin-bottom: 14px; padding-left: 22px; padding-right: 22px; align-items: center; justify-content: space-between; }
+.label { color: #ffffff; font-size: 28px; }
 .label-danger { color: #ff6961; }
-.value { color: #8e8e93; font-size: 16px; }
-.switch { width: 52px; height: 30px; border-radius: 15px; }
-.knob { width: 26px; height: 26px; border-radius: 13px; background-color: #ffffff; }
-.hint { color: #6e6e73; font-size: 14px; text-align: center; margin-top: 12px; }
+.value { color: #8e8e93; font-size: 22px; }
+.radio { width: 32px; height: 32px; border-radius: 16px; border-width: 4px; }
+.switch { width: 66px; height: 38px; border-radius: 19px; }
+.knob { width: 32px; height: 32px; border-radius: 16px; background-color: #ffffff; }
+.hint { color: #6e6e73; font-size: 18px; text-align: center; margin-top: 16px; }
 </style>
