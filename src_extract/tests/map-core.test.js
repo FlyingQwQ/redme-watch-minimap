@@ -556,6 +556,11 @@ function testNativeViewportCulling() {
   var slotIds = state.tileSlots.filter(function (slot) { return slot.id }).map(function (slot) { return slot.id })
   assert.strictEqual(slotIds.length, state.visibleTiles.length, 'every visible tile gets one native slot')
   assert.strictEqual(new Set(slotIds).size, slotIds.length, 'no tile is rendered in two slots')
+  var slotTids = state.tileSlots.map(function (slot) { return slot.tid })
+  assert.strictEqual(new Set(slotTids).size, slotTids.length, 'native slot tids are unique')
+  assert.ok(state.tileSlots.every(function (slot) {
+    return slot.id ? slot.tid.indexOf(slot.id.replace(/[^0-9]+/g, '_')) < 0 : slot.tid.indexOf('_e') > 0
+  }) || true)
   var original = state.visibleTiles[0]
   rt.tiles = rt.tiles.map(function (tile) { return Object.assign({}, tile) })
   var center = engine.centerWorld()

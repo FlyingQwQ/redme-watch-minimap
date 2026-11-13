@@ -148,7 +148,7 @@ function sameRenderNodes(previous, next) {
 function emptyTileSlots() {
   var slots = []
   for (var i = 0; i < Config.TILE_SLOT_COUNT; i += 1) {
-    slots.push({ tid: 'slot_' + i, id: '', src: '', left: 0, top: 0, drawWidth: 0, drawHeight: 0, opacity: 0 })
+    slots.push({ tid: 's' + i + '_e', id: '', src: '', left: 0, top: 0, drawWidth: 0, drawHeight: 0, opacity: 0 })
   }
   return slots
 }
@@ -599,7 +599,11 @@ export default {
       if (index >= slots.length) break
       used[index] = true
       slots[index] = {
-        tid: 'slot_' + index,
+        // The tid must change when the slot's tile changes. Keeping a fixed
+        // "slot_i" makes Vela reuse the same native image node, and its old
+        // bitmap can stay visible at the new position until the new src
+        // decodes, which looks like two identical tiles.
+        tid: 's' + index + '_' + (tile.tid || ''),
         id: tile.id,
         src: tile.src,
         left: tile.left,
