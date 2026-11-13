@@ -544,7 +544,11 @@ TileManager.prototype.handleResponse = function (job, response) {
   try {
     this.file.writeArrayBuffer({
       uri: uri,
-      buffer: buffer,
+      // Vela's file API documents ArrayBuffer, not a typed-array view. Passing
+      // the Uint8Array object can "succeed" while writing bytes the native
+      // <image> decoder cannot read, which shows every tile as a red failure
+      // border even though fetch and file write both report success.
+      buffer: buffer.buffer,
       success: function () {
         if (writeSettled) {
           self.deleteFile(uri)
@@ -777,6 +781,30 @@ TileManager.prototype.armWatchdog = function (job) {
     self.abandonNetworkSlot(job)
     self.finishFailure(job, '地图请求超时', 408, null)
   }, Config.REQUEST_TIMEOUT_MS)
+}
+
+TileManager.prototype.invalidateTile = function (key, src) {
+  if (this.dead) return
+  var record = this.memory[key]
+  if (record && record.uri === src) {
+    this.retireUri(record.uri, key)
+    delete this.memory[key]
+    var memoryIndex = this.memoryOrder.indexOf(key)
+    if (memoryIndex >= 0) this.memoryOrder.splice(memoryIndex, 1)
+    if (this.disk[key] && this.disk[key].uri === src) {
+      delete this.disk[key]
+      this.markIndexDirty()
+    }
+  }
+  delete this.failureCount[key]
+  delete this.failureRetryAt[key]
+  delete this.blocked[key]
+  var plan = this.desiredByKey[key]
+  if (plan) {
+    this.enqueue(plan, null, true, false)
+    this.publish()
+    this.pump()
+  }
 }
 
 TileManager.prototype.touchMemory = function (key) {

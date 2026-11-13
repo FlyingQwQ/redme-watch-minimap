@@ -123,7 +123,8 @@ function createRuntimeState() {
     tiles: [],
     failureRecords: [],
     imageReady: {},
-    imageErrors: {}
+    imageErrors: {},
+    imageRetries: {}
   }
 }
 
@@ -231,6 +232,7 @@ export default {
     state.failureRecords = []
     state.imageReady = {}
     state.imageErrors = {}
+    state.imageRetries = {}
     this.visibleTiles = []
     this.failedTiles = []
     this.loadingIndicators = []
@@ -265,6 +267,7 @@ export default {
     state.failureRecords = []
     state.imageReady = {}
     state.imageErrors = {}
+    state.imageRetries = {}
     state.gesture = null
     state.pinch = null
     state.pendingTiles = null
@@ -331,6 +334,7 @@ export default {
         state.failureRecords = []
         state.imageReady = {}
         state.imageErrors = {}
+        state.imageRetries = {}
         state.lastTileStatus = ''
         self.visibleTiles = []
         self.failedTiles = []
@@ -752,6 +756,7 @@ export default {
       if (this.visibleTiles[i].id === id && this.visibleTiles[i].src === src) {
         state.imageReady[id] = src
         delete state.imageErrors[id]
+        delete state.imageRetries[id]
         this.refreshLoadingIndicators()
         return
       }
@@ -1116,14 +1121,24 @@ export default {
     if (state.disposed || !state.pageVisible) return
     for (var i = 0; i < this.visibleTiles.length; i += 1) {
       if (this.visibleTiles[i].id === id && this.visibleTiles[i].src === src) {
-        state.imageErrors[id] = src
         delete state.imageReady[id]
-        if (!state.gesture && !state.pinch) this.redrawTiles()
+        var retries = state.imageRetries[id] || 0
+        state.imageRetries[id] = retries + 1
+        if (retries < 1 && state.tileManager) {
+          // A cache file from an older write path can exist but be unreadable.
+          // Drop only this tile and fetch it again once.
+          delete state.imageErrors[id]
+          state.tileManager.invalidateTile(id, src)
+          this.statusText = '地图图片解码失败，正在重新下载'
+        } else {
+          state.imageErrors[id] = src
+          if (!state.gesture && !state.pinch) this.redrawTiles()
+          this.statusText = '地图图片显示失败 · 点按重试'
+        }
         break
       }
     }
     state.imageErrorCount += 1
-    this.statusText = '地图图片显示失败 · 点按重试'
   }
 }
 
