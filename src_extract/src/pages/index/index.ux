@@ -145,6 +145,15 @@ function sameRenderNodes(previous, next) {
   return true
 }
 
+function srcTag(src) {
+  var hash = 5381
+  var text = src || ''
+  for (var i = 0; i < text.length; i += 1) {
+    hash = (((hash * 33) ^ text.charCodeAt(i)) >>> 0)
+  }
+  return hash.toString(36)
+}
+
 function emptyTileSlots() {
   var slots = []
   for (var i = 0; i < Config.TILE_SLOT_COUNT; i += 1) {
@@ -603,7 +612,7 @@ export default {
         // "slot_i" makes Vela reuse the same native image node, and its old
         // bitmap can stay visible at the new position until the new src
         // decodes, which looks like two identical tiles.
-        tid: 's' + index + '_' + (tile.tid || ''),
+        tid: 's' + index + '_' + (tile.tid || '') + '_' + srcTag(tile.src),
         id: tile.id,
         src: tile.src,
         left: tile.left,

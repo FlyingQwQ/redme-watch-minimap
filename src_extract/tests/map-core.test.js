@@ -558,9 +558,24 @@ function testNativeViewportCulling() {
   assert.strictEqual(new Set(slotIds).size, slotIds.length, 'no tile is rendered in two slots')
   var slotTids = state.tileSlots.map(function (slot) { return slot.tid })
   assert.strictEqual(new Set(slotTids).size, slotTids.length, 'native slot tids are unique')
-  assert.ok(state.tileSlots.every(function (slot) {
-    return slot.id ? slot.tid.indexOf(slot.id.replace(/[^0-9]+/g, '_')) < 0 : slot.tid.indexOf('_e') > 0
-  }) || true)
+  var visibleById = {}
+  state.visibleTiles.forEach(function (tile) { visibleById[tile.id] = tile })
+  state.tileSlots.forEach(function (slot, index) {
+    if (slot.id) {
+      assert.ok(slot.tid.indexOf('s' + index + '_' + visibleById[slot.id].tid + '_') === 0,
+        'slot tid changes with the tile and its source assigned to it')
+    } else {
+      assert.strictEqual(slot.tid, 's' + index + '_e', 'empty slot has a distinct tid')
+    }
+  })
+  var slotTile = state.visibleTiles[0]
+  var tidBefore = state.tileSlots.filter(function (slot) { return slot.id === slotTile.id })[0].tid
+  state.applyTileSlots(state.visibleTiles.map(function (tile) {
+    return tile.id === slotTile.id ? Object.assign({}, tile, { src: tile.src + '?v=2' }) : tile
+  }))
+  var tidAfter = state.tileSlots.filter(function (slot) { return slot.id === slotTile.id })[0].tid
+  assert.notStrictEqual(tidBefore, tidAfter, 'native slot is recreated when the tile source changes')
+  state.applyTileSlots(state.visibleTiles)
   var original = state.visibleTiles[0]
   rt.tiles = rt.tiles.map(function (tile) { return Object.assign({}, tile) })
   var center = engine.centerWorld()
