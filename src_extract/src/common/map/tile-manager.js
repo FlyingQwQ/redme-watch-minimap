@@ -479,7 +479,7 @@ TileManager.prototype.startRequest = function (job) {
   if (job.stale && job.stale.lastModified) headers['If-Modified-Since'] = job.stale.lastModified
   job.started = Date.now()
   job.timedOut = false
-  job.responseType = job.preferFile || !this.directoryReady ? 'file' : 'arraybuffer'
+  job.responseType = job.preferFile || this.provider.preferFile || !this.directoryReady ? 'file' : 'arraybuffer'
   this.activeCount += 1
   this.inFlight[job.key] = job
   this.publish()

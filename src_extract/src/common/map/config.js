@@ -8,8 +8,10 @@ module.exports = {
   TILE_SOURCE_ID: 'osmfr-v1',
   TILE_URL: 'https://a.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png',
   TILE_ATTRIBUTION: '© OpenStreetMap / ODbL · Tiles: OSM France',
-  USER_AGENT: 'RedmiWatch6NativeMap/0.1.37 (Xiaomi Vela)',
-  REQUEST_CONCURRENCY: 2,
+  USER_AGENT: 'RedmiWatch6NativeMap/0.1.38 (Xiaomi Vela)',
+  // Two parallel fetches to the same host correlated with byte corruption on
+  // device (Tianditu tiles failing the 256x256 validation). One at a time.
+  REQUEST_CONCURRENCY: 1,
   REQUEST_TIMEOUT_MS: 15000,
   // Native image decodes are the largest memory spike on a 30MB watch.
   REVEAL_TILE_BATCH: 4,

@@ -367,7 +367,7 @@ function testHongKongDefaultAndMathCaches() {
   var next = engine.planVisibleTiles({ x: center.x + 256, y: center.y })
   assert.notStrictEqual(next, first, 'crossing a tile boundary produces a new plan')
   near(first[0].left, oldLeft, 1e-6, 'old request plan is not overwritten by the new tile range')
-  engine.sourceId = 'osm-standard-v1'
+  engine.sourceId = 'tianditu-v1'
   assert.notStrictEqual(engine.planVisibleTiles(center), next, 'provider change invalidates the cached plan')
   var original = Projection.lonLatToWorld
   var count = 0
@@ -496,7 +496,7 @@ function testPreferencesAndProviderSwitch() {
   var Providers = require('../src/common/map/providers')
   var saved = ''
   var storage = { get: function (o) { o.success(saved) }, set: function (o) { saved = o.value; o.success() } }
-  var values = { sourceId: 'osm-standard-v1', previousSourceId: 'osmfr-v1', hideBottomHint: true, showLoadingIndicators: false, showStatus: false, showFailureMarks: false }
+  var values = { sourceId: 'tianditu-v1', previousSourceId: 'osmfr-v1', hideBottomHint: true, showLoadingIndicators: false, showStatus: false, showFailureMarks: false }
   Preferences.save(storage, values, function () {}, function () { assert.fail('save failed') })
   Preferences.load(storage, function (restored) { assert.deepStrictEqual(restored, values, 'settings survive a fresh read') })
   assert.strictEqual(Preferences.normalize({ sourceId: 'bad-source' }).sourceId, 'osmfr-v1')
@@ -511,24 +511,25 @@ function testPreferencesAndProviderSwitch() {
   manager.setVisible(true)
   var first = engine.planVisibleTiles()[0]
   manager.setPlan([first])
-  engine.sourceId = 'osm-standard-v1'
+  engine.sourceId = 'tianditu-v1'
   var next = engine.planVisibleTiles()[0]
   assert.notStrictEqual(first.key, next.key, 'source cache keys are isolated')
   manager.setProvider(Providers.get(engine.sourceId))
   manager.setPlan([next])
   network.requests[0].success({ code: 200, headers: {}, data: pngHeader() })
-  // With REQUEST_CONCURRENCY 2 the new plan request may start before the old
-  // tile's fallback; identify requests by URL instead of by position.
+  // With serial requests the old tile's file fallback completes before the new
+  // provider's request starts; identify requests by URL instead of by position.
   var fallbackRequest = null
-  var newSourceRequest = null
   for (var r = 1; r < network.requests.length; r += 1) {
-    var request = network.requests[r]
-    if (!fallbackRequest && request.url === network.requests[0].url) fallbackRequest = request
-    else if (!newSourceRequest && request.url.indexOf('https://tile.openstreetmap.org/') === 0) newSourceRequest = request
+    if (network.requests[r].url === network.requests[0].url) { fallbackRequest = network.requests[r]; break }
   }
   assert.ok(fallbackRequest, 'fallback of an old request stays on its original provider')
-  assert.ok(newSourceRequest, 'new viewport uses selected provider')
   fallbackRequest.success({ code: 200, headers: {}, data: 'internal://tmp/old-source.png' })
+  var newSourceRequest = null
+  for (var r2 = 1; r2 < network.requests.length; r2 += 1) {
+    if (network.requests[r2].url.indexOf('vec_w/wmts') > 0) { newSourceRequest = network.requests[r2]; break }
+  }
+  assert.ok(newSourceRequest, 'new viewport uses selected provider')
   newSourceRequest.fail('closed', -1)
   manager.destroy()
 }
@@ -860,7 +861,7 @@ function testNativeLayeringAndMemoryProfile() {
     'drag layer positions update at a bounded rate')
   assert.ok(page.indexOf('var TILE_APPLY_DELAY = 50') >= 0,
     'bursty tile callbacks are coalesced before native image work')
-  assert.strictEqual(Config.REQUEST_CONCURRENCY, 2, 'tile downloads stay at a bounded two-request concurrency on the low-memory watch')
+  assert.strictEqual(Config.REQUEST_CONCURRENCY, 1, 'tile downloads stay serial on the watch: parallel fetches to one host corrupted tile bytes')
   assert.strictEqual(Config.EDGE_BUFFER_RATIO, 0, 'the low-memory profile does not prefetch off-screen tiles')
   assert.ok(page.indexOf('width: {{$item.drawWidth}}px; height: {{$item.drawHeight}}px;') >= 0,
     'tiles use a precomputed draw size so the template never does arithmetic')

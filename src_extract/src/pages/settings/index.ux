@@ -8,7 +8,7 @@
 
         <div class="menu-row" onclick="goSources">
           <text class="menu-label">地图来源</text>
-          <text class="menu-value">{{sourceId === 'osmfr-v1' ? 'OSM 法国' : sourceId === 'osm-standard-v1' ? 'OSM 标准' : sourceId === 'tianditu-v1' ? '天地图' : ''}} ›</text>
+          <text class="menu-value">{{sourceId === 'osmfr-v1' ? 'OSM 法国' : sourceId === 'tianditu-v1' ? '天地图' : ''}} ›</text>
         </div>
         <div class="menu-row" onclick="goDisplay">
           <text class="menu-label">显示</text>
@@ -31,10 +31,6 @@
         <div class="row" onclick="selectSource('osmfr-v1')">
           <text class="label">OSM 法国社区</text>
           <div class="radio" style="border-color: {{sourceId === 'osmfr-v1' ? '#5c9dff' : '#5a5a5e'}}; background-color: {{sourceId === 'osmfr-v1' ? '#5c9dff' : '#000000'}};"></div>
-        </div>
-        <div class="row" onclick="selectSource('osm-standard-v1')">
-          <text class="label">OSM 标准</text>
-          <div class="radio" style="border-color: {{sourceId === 'osm-standard-v1' ? '#5c9dff' : '#5a5a5e'}}; background-color: {{sourceId === 'osm-standard-v1' ? '#5c9dff' : '#000000'}};"></div>
         </div>
         <div class="row" onclick="selectSource('tianditu-v1')">
           <text class="label">天地图</text>
