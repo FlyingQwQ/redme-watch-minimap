@@ -257,7 +257,7 @@ GPS 单次请求最长等待 60 秒，结束后再启动订阅，不同时发起
 
 新增 `tianditu-v1` 图源：矢量底图 `vec_w` + 注记层 `cva_w`，在设置页“地图来源”中切换。天地图是双层 WMTS，底图和注记使用两个 `TileManager`：底图缓存仍放在 `tiles/`，注记单独放在 `labels/`，索引也分开，避免两个管理器互相覆盖缓存索引。注记请求通过 `setPlan(plans, keyPrefix)` 加独立的 key 前缀，不会和底图 key 冲突。
 
-天地图 Key 是浏览器端类型，请求必须带 `Referer: https://www.tianditu.gov.cn/`，`TileManager` 现在支持 provider 自定义 header。若手表端 fetch 丢失 Referer，天地图会返回 301012 JSON；`isImageBytes` 会拒绝它并报“地图图片格式或尺寸无效”，此时需要在天地图控制台新建服务端 Key 替换 `providers.js` 中的 Key。
+天地图 Key 是浏览器端类型，请求必须带 `Referer: https://www.tianditu.gov.cn/`，`TileManager` 现在支持 provider 自定义 header。浏览器端 Key 还会检查 User-Agent：非浏览器 UA 即使带 Referer 也会返回 HTTP 403。实测 `RedmiWatch6NativeMap/...` 得到 403，换成 `Mozilla/5.0 ... Mobile Safari/...` 后返回 200 PNG，因此天地图 Provider 单独覆盖 `User-Agent` 为浏览器 UA。若手表端 fetch 丢失 Referer/User-Agent，天地图会返回 301012 JSON 或 403；`isImageBytes` 会拒绝非图片内容并报“地图图片格式或尺寸无效”，此时需要在天地图控制台新建服务端 Key 替换 `providers.js` 中的 Key。
 
 注记层复用固定 12 个槽位，每个槽位增加独立的 `overlayTid`、`overlaySrc`、`overlayOpacity`；`overlayTid` 同样跟随注记 `src` 变化，避免旧注记位图残留。注记加载失败不会影响底图，也不会触发失败红框。
 

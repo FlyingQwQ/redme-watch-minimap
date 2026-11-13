@@ -1,5 +1,11 @@
 var TIANDITU_KEY = '0df4296c1d7da2ce72ab780d708b805e'
 var TIANDITU_REFERER = 'https://www.tianditu.gov.cn/'
+// The browser-type Tianditu key rejects non-browser User-Agents with HTTP 403,
+// even when a valid Referer is present. Keep the app identity for OSM, but use
+// a browser-like UA for the user's own Tianditu browser key. A server-type key
+// does not need this workaround.
+var TIANDITU_UA = 'Mozilla/5.0 (Linux; Android 10; Redmi Watch 6) AppleWebKit/537.36 (KHTML, like Gecko) Mobile Safari/537.36'
+var TIANDITU_HEADERS = { Referer: TIANDITU_REFERER, 'User-Agent': TIANDITU_UA }
 var TIANDITU_BASE = 'https://{s}.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=' + TIANDITU_KEY
 var TIANDITU_LABELS = 'https://{s}.tianditu.gov.cn/cva_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cva&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=' + TIANDITU_KEY
 
@@ -11,10 +17,10 @@ var providers = [
     name: '天地图 · 矢量 + 注记',
     url: TIANDITU_BASE,
     subdomains: ['t0', 't1', 't2', 't3'],
-    headers: { Referer: TIANDITU_REFERER },
+    headers: TIANDITU_HEADERS,
     overlayUrl: TIANDITU_LABELS,
     overlaySubdomains: ['t0', 't1', 't2', 't3'],
-    overlayHeaders: { Referer: TIANDITU_REFERER },
+    overlayHeaders: TIANDITU_HEADERS,
     attribution: '© 天地图 · 矢量底图与注记'
   }
 ]
