@@ -36,10 +36,6 @@
           <text class="label">天地图</text>
           <div class="radio" style="border-color: {{sourceId === 'tianditu-v1' ? '#5c9dff' : '#5a5a5e'}}; background-color: {{sourceId === 'tianditu-v1' ? '#5c9dff' : '#000000'}};"></div>
         </div>
-        <div if="{{previousSourceId !== '' && previousSourceId !== sourceId}}" class="row" onclick="usePrevious">
-          <text class="label">切回上次使用</text>
-          <text class="value">{{previousName}}</text>
-        </div>
 
         <text class="hint">{{saveStatus}}</text>
       </div>

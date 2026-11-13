@@ -1,8 +1,8 @@
 {
   "package": "com.example.redmiwatch6.map",
   "name": "街道地图",
-  "versionName": "0.1.40",
-  "versionCode": 41,
+  "versionName": "0.1.41",
+  "versionCode": 42,
   "minPlatformVersion": 1200,
   "simulationVersion": "default",
   "deviceTypeList": [
@@ -55,7 +55,7 @@
   "minAPILevel": 1,
   "packageInfo": {
     "toolkit": "2.0.5",
-    "timeStamp": "2026-11-13T15:28:44.461Z",
+    "timeStamp": "2026-11-13T15:36:36.687Z",
     "node": "v24.1.0",
     "platform": "linux",
     "arch": "x64",

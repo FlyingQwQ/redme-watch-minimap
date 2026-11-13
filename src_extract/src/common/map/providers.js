@@ -13,8 +13,11 @@ var providers = [
   {
     id: 'tianditu-v1',
     name: '天地图 · 矢量 + 注记',
-    url: TIANDITU_BASE,
-    urls: [TIANDITU_BASE, TIANDITU_DATA],
+    // DataServer leads: its URL is ~105 chars versus ~190 for WMTS, and the
+    // device shows signs of a URL length limit (the short OSM URLs work while
+    // every long Tianditu URL fails in every mode).
+    url: TIANDITU_DATA,
+    urls: [TIANDITU_DATA, TIANDITU_BASE],
     subdomains: ['t0', 't1', 't2', 't3'],
     // The tile src IS the remote URL: the native image component downloads and
     // decodes it itself, with its own cache. No JS fetch, no byte validation,

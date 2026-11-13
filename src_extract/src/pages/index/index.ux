@@ -533,7 +533,8 @@ export default {
     this.updateTilePlan()
     this.updateTileDiagnostics()
     this.scheduleAutoRetry()
-    if (state.pageVisible) state.locationManager.start()
+    // No automatic GPS: the map sits on the default center until the user
+    // taps the locate button.
   },
 
   createOverlayManager(provider) {
@@ -581,7 +582,13 @@ export default {
       state.overlayManager.setVisible(true)
       state.overlayManager.publish()
     }
-    if (state.locationManager) state.locationManager.start()
+  },
+
+  locateOnce() {
+    var state = runtime
+    if (!state.locationManager) return
+    if (!state.locationManager.active) state.locationManager.start()
+    else state.locationManager.requestOnce()
   },
 
   onTileManagerChange(tiles, requiredCount, loadedCount) {
@@ -675,6 +682,13 @@ export default {
     var stats = state.tileManager.getStats()
     var text = '请求' + stats.attempted + ' 成功' + stats.succeeded + ' 失败' + stats.failed
     if (stats.failed > 0 && stats.lastCode) text += ' · ' + stats.lastCode
+    // Direct sources (Tianditu) never use fetch, so the fetch counters stay at
+    // zero; surface the native image completion/failure counters instead.
+    var errorCount = 0
+    for (var key in state.imageErrors) {
+      if (Object.prototype.hasOwnProperty.call(state.imageErrors, key) && state.imageErrors[key]) errorCount += 1
+    }
+    text += ' 图' + state.loadedTileCount + '/' + state.requiredTileCount + ' 败' + errorCount
     this.tileDiagText = text
   },
 
@@ -1100,14 +1114,14 @@ export default {
     state.followLocation = true
     if (!state.locationFix) {
       this.statusText = '正在请求当前位置'
-      if (state.locationManager) state.locationManager.requestOnce()
+      this.locateOnce()
       return
     }
     this.cancelGesture()
     state.engine.setCenter(state.locationFix.latitude, state.locationFix.longitude)
     this.updateTilePlan()
     this.statusText = '已回到当前位置'
-    if (state.locationManager) state.locationManager.requestOnce()
+    this.locateOnce()
   },
 
   onUiTouchStart() {
