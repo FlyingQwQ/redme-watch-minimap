@@ -659,7 +659,7 @@ export default {
     if (!state.locationFix) {
       if (state.loadedTileCount > 0 && state.loadedTileCount >= state.requiredTileCount) {
         state.lastTileStatus = ''
-        this.statusText = state.gpsStatus || '默认位置 · 香港'
+        this.statusText = state.gpsStatus || '默认位置 · 北京'
       } else if (state.requiredTileCount > 0 && !state.lastTileStatus) {
         this.statusText = '地图加载中 ' + state.loadedTileCount + '/' + state.requiredTileCount
       }
@@ -1325,7 +1325,7 @@ export default {
     var state = runtime
     if (state.followLocation) this.statusText = '位置跟随已开启'
     else if (state.locationFix) this.statusText = '自由浏览地图'
-    else this.statusText = '默认位置 · 香港'
+    else this.statusText = '默认位置 · 北京'
   },
 
   retryTiles() {

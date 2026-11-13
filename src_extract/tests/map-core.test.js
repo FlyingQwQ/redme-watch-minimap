@@ -343,11 +343,11 @@ function testTileManager() {
   fallback.destroy()
 }
 
-function testHongKongDefaultAndMathCaches() {
+function testBeijingDefaultAndMathCaches() {
   var engine = new MapEngine()
   engine.setViewport(432, 514, 256)
-  near(engine.center.latitude, 22.2819, 1e-9, 'default center is Hong Kong')
-  near(engine.center.longitude, 114.1589, 1e-9)
+  near(engine.center.latitude, 39.9087, 1e-9, 'default center is Beijing')
+  near(engine.center.longitude, 116.3975, 1e-9)
   var center = engine.centerWorld()
   var boundary = new MapEngine({ zoom: 10, latitude: 0, longitude: 0 })
   boundary.setViewport(432, 514, 256)
@@ -918,7 +918,7 @@ testGestures()
 testTileLayout()
 testTileManager()
 testTiandituProvider()
-testHongKongDefaultAndMathCaches()
+testBeijingDefaultAndMathCaches()
 testFailureBorders()
 testPanNodeReuse()
 testPreferencesAndProviderSwitch()

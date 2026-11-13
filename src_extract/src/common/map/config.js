@@ -4,11 +4,11 @@ module.exports = {
   MIN_ZOOM: 3,
   MAX_ZOOM: 18,
   INITIAL_ZOOM: 15,
-  INITIAL_CENTER: { latitude: 22.2819, longitude: 114.1589 },
+  INITIAL_CENTER: { latitude: 39.9087, longitude: 116.3975 },
   TILE_SOURCE_ID: 'osmfr-v1',
   TILE_URL: 'https://a.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png',
   TILE_ATTRIBUTION: '© OpenStreetMap / ODbL · Tiles: OSM France',
-  USER_AGENT: 'RedmiWatch6NativeMap/0.1.38 (Xiaomi Vela)',
+  USER_AGENT: 'RedmiWatch6NativeMap/0.1.39 (Xiaomi Vela)',
   // Two parallel fetches to the same host correlated with byte corruption on
   // device (Tianditu tiles failing the 256x256 validation). One at a time.
   REQUEST_CONCURRENCY: 1,
