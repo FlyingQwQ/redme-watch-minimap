@@ -1,5 +1,5 @@
 <template>
-  <stack id="map-root" class="map-root" style="width: {{viewWidth}}px; height: {{viewHeight}}px;" ontouchstart="onMapTouchStart" ontouchmove="onMapTouchMove" ontouchend="onMapTouchEnd" onlongpress="openSettings">
+  <stack id="map-root" class="map-root" style="width: {{viewWidth}}px; height: {{viewHeight}}px;" ontouchstart="onMapTouchStart" ontouchmove="onMapTouchMove" ontouchend="onMapTouchEnd" ontouchcancel="onMapTouchCancel">
     <stack class="tile-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
       <image for="{{tileSlots}}" tid="tid" class="map-tile" alt="blank" src="{{$item.src}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.drawWidth}}px; height: {{$item.drawHeight}}px; opacity: {{$item.opacity}};" oncomplete="onTileImageComplete($item.id, $item.src)" onerror="onTileImageError($item.id, $item.src)"></image>
     </stack>
@@ -68,6 +68,12 @@ var DRAG_RENDER_DELAY = 80
 var TILE_APPLY_DELAY = 50
 var PINCH_IN_THRESHOLD = 1.3
 var PINCH_OUT_THRESHOLD = 0.77
+// Hold the map still for this long and the settings page opens by itself.
+var LONG_PRESS_MS = 600
+// The system back gesture claims right-swipes that start near the left edge.
+// Do not arm a map drag there: the drag would freeze after a few pixels when
+// the OS takes over the touch stream.
+var EDGE_BACK_STRIP = 40
 
 // Vela recursively observes every property declared in private/protected/data.
 // Large runtime objects (engine, tile manager, gesture buffers) must stay outside
@@ -113,9 +119,9 @@ function createRuntimeState() {
     lastZoomAt: 0,
     lastManualRetryAt: 0,
     pinnedSignature: '',
-    settingsPending: false,
     revealTimer: null,
     revealPending: false,
+    longPressTimer: null,
     gesture: null,
     panInput: null,
     pinch: null,
@@ -253,7 +259,6 @@ export default {
     // The map is the root page. Consume the watch's right-swipe/back gesture so
     // panning the map cannot exit to the app list. Exit from Settings instead.
     if (state.gesture || state.pinch) this.cancelGesture()
-    state.settingsPending = false
     return true
   },
 
@@ -265,7 +270,7 @@ export default {
     state.uiTouchActive = false
     state.pendingTiles = null
     state.pendingOverlayTiles = null
-    state.settingsPending = false
+    this.clearLongPressTimer()
     if (state.tileApplyTimer !== null) clearTimeout(state.tileApplyTimer)
     state.tileApplyTimer = null
     this.clearAutoRetry()
@@ -310,6 +315,7 @@ export default {
     if (state.dragTimer !== null) clearTimeout(state.dragTimer)
     if (state.tileApplyTimer !== null) clearTimeout(state.tileApplyTimer)
     if (state.revealTimer !== null) clearTimeout(state.revealTimer)
+    this.clearLongPressTimer()
     state.layoutTimer = null
     state.dragTimer = null
     state.tileApplyTimer = null
@@ -346,22 +352,16 @@ export default {
     }
   },
 
-  openSettings() {
+  clearLongPressTimer() {
     var state = runtime
-    if (!state.pageVisible || state.disposed || state.openingSettings || state.uiTouchActive || (state.gesture && state.gesture.moved)) return
-    // Never push a page while a finger is still down: the router transition
-    // would run in the middle of a touch sequence.
-    if (state.gesture) {
-      state.settingsPending = true
-      return
-    }
-    this.openSettingsNow()
+    if (state.longPressTimer !== null) clearTimeout(state.longPressTimer)
+    state.longPressTimer = null
   },
 
   openSettingsNow() {
     var state = runtime
     if (!state.pageVisible || state.disposed || state.openingSettings) return
-    state.settingsPending = false
+    this.clearLongPressTimer()
     state.openingSettings = true
     this.cancelGesture(true)
     try { router.push({ uri: '/pages/settings' }) }
@@ -1125,6 +1125,9 @@ export default {
     var touch = Gestures.getTouch(event)
     var point = Gestures.getPoint(touch, state.viewport)
     if (!point) return
+    // Leave right-swipes from the left edge to the system back gesture; arming
+    // a drag there only produces a few frozen pixels before the OS cancels it.
+    if (point.x < EDGE_BACK_STRIP) return
     state.gesture = {
       identifier: point.identifier,
       startX: point.x,
@@ -1135,6 +1138,13 @@ export default {
       centerWorld: state.engine.centerWorld(),
       currentWorld: state.engine.centerWorld()
     }
+    // Hold the map still and settings opens without waiting for finger-up.
+    var self = this
+    this.clearLongPressTimer()
+    state.longPressTimer = setTimeout(function () {
+      state.longPressTimer = null
+      if (state.gesture && !state.gesture.moved) self.openSettingsNow()
+    }, LONG_PRESS_MS)
   },
 
   onMapTouchMove(event) {
@@ -1158,7 +1168,7 @@ export default {
     if (!state.gesture.moved) {
       if (dx * dx + dy * dy < DRAG_START_DISTANCE * DRAG_START_DISTANCE) return
       state.gesture.moved = true
-      state.settingsPending = false
+      this.clearLongPressTimer()
       if (state.tileManager) state.tileManager.setInteracting(true)
       state.followLocation = false
       if (this.loadingIndicators.length) this.loadingIndicators = []
@@ -1168,6 +1178,7 @@ export default {
 
   onMapTouchEnd(event) {
     var state = runtime
+    this.clearLongPressTimer()
     if (state.uiTouchActive) {
       state.uiTouchActive = false
       return
@@ -1180,7 +1191,6 @@ export default {
     this.syncPanInput()
     var gesture = state.gesture
     if (gesture.moved) {
-      state.settingsPending = false
       state.engine.commitWorldCenter(gesture.currentWorld)
       state.gesture = null
       this.flushPendingTiles()
@@ -1193,7 +1203,13 @@ export default {
     if (state.dragTimer !== null) clearTimeout(state.dragTimer)
     state.dragTimer = null
     if (state.tileManager) state.tileManager.setInteracting(false)
-    if (state.settingsPending) this.openSettingsNow()
+  },
+
+  // The system back gesture (and screen-off) can cancel the touch stream in
+  // the middle of a drag. Commit whatever movement happened so the map never
+  // freezes on a stale gesture object.
+  onMapTouchCancel(event) {
+    this.onMapTouchEnd(event)
   },
 
   scheduleDragRender() {
@@ -1292,6 +1308,7 @@ export default {
 
   cancelGesture(deferResume) {
     var state = runtime
+    this.clearLongPressTimer()
     this.syncPanInput()
     if (state.gesture && state.gesture.moved && state.engine) state.engine.commitWorldCenter(state.gesture.currentWorld)
     state.gesture = null

@@ -6,52 +6,47 @@
         <text class="title">地图设置</text>
 
         <text class="section">地图来源</text>
-        <div class="card">
-          <div class="row" onclick="selectSource('osmfr-v1')">
-            <text class="label">OSM 法国社区</text>
-            <text class="value" style="color: {{sourceId === 'osmfr-v1' ? '#7fd6e4' : '#8ba0a8'}};">{{sourceId === 'osmfr-v1' ? '使用中' : '切换'}}</text>
-          </div>
-          <div class="divider"></div>
-          <div class="row" onclick="selectSource('osm-standard-v1')">
-            <text class="label">OSM 标准</text>
-            <text class="value" style="color: {{sourceId === 'osm-standard-v1' ? '#7fd6e4' : '#8ba0a8'}};">{{sourceId === 'osm-standard-v1' ? '使用中' : '切换'}}</text>
-          </div>
-          <div class="divider"></div>
-          <div class="row" onclick="selectSource('tianditu-v1')">
-            <text class="label">天地图</text>
-            <text class="value" style="color: {{sourceId === 'tianditu-v1' ? '#7fd6e4' : '#8ba0a8'}};">{{sourceId === 'tianditu-v1' ? '使用中' : '切换'}}</text>
-          </div>
-          <div if="{{previousSourceId !== '' && previousSourceId !== sourceId}}" class="divider"></div>
-          <div if="{{previousSourceId !== '' && previousSourceId !== sourceId}}" class="row" onclick="usePrevious">
-            <text class="label">切回上次使用</text>
-            <text class="value" style="color: #8ba0a8;">{{previousName}}</text>
-          </div>
+        <div class="row" onclick="selectSource('osmfr-v1')">
+          <text class="label">OSM 法国社区</text>
+          <text class="value" style="color: {{sourceId === 'osmfr-v1' ? '#5c9dff' : '#8e8e93'}};">{{sourceId === 'osmfr-v1' ? '使用中' : '切换 ›'}}</text>
+        </div>
+        <div class="row" onclick="selectSource('osm-standard-v1')">
+          <text class="label">OSM 标准</text>
+          <text class="value" style="color: {{sourceId === 'osm-standard-v1' ? '#5c9dff' : '#8e8e93'}};">{{sourceId === 'osm-standard-v1' ? '使用中' : '切换 ›'}}</text>
+        </div>
+        <div class="row" onclick="selectSource('tianditu-v1')">
+          <text class="label">天地图</text>
+          <text class="value" style="color: {{sourceId === 'tianditu-v1' ? '#5c9dff' : '#8e8e93'}};">{{sourceId === 'tianditu-v1' ? '使用中' : '切换 ›'}}</text>
+        </div>
+        <div if="{{previousSourceId !== '' && previousSourceId !== sourceId}}" class="row" onclick="usePrevious">
+          <text class="label">切回上次使用</text>
+          <text class="value" style="color: #8e8e93;">{{previousName}}</text>
         </div>
 
         <text class="section">显示</text>
-        <div class="card">
-          <div class="row" onclick="toggleStatus">
-            <text class="label">顶部状态信息</text>
-            <text class="value" style="color: {{showStatus ? '#7fd6e4' : '#8ba0a8'}};">{{showStatus ? '开启' : '关闭'}}</text>
-          </div>
-          <div class="divider"></div>
-          <div class="row" onclick="toggleBottomHint">
-            <text class="label">底部图源署名</text>
-            <text class="value" style="color: {{hideBottomHint ? '#8ba0a8' : '#7fd6e4'}};">{{hideBottomHint ? '隐藏' : '显示'}}</text>
-          </div>
-          <div class="divider"></div>
-          <div class="row" onclick="toggleLoading">
-            <text class="label">瓦片加载动画</text>
-            <text class="value" style="color: {{showLoadingIndicators ? '#7fd6e4' : '#8ba0a8'}};">{{showLoadingIndicators ? '开启' : '关闭'}}</text>
-          </div>
+        <div class="row" onclick="toggleStatus">
+          <text class="label">顶部状态信息</text>
+          <stack class="switch" style="background-color: {{showStatus ? '#4d8df7' : '#39393d'}};">
+            <div class="knob" style="left: {{showStatus ? 26 : 2}}px; top: 2px;"></div>
+          </stack>
+        </div>
+        <div class="row" onclick="toggleBottomHint">
+          <text class="label">底部图源署名</text>
+          <stack class="switch" style="background-color: {{hideBottomHint ? '#39393d' : '#4d8df7'}};">
+            <div class="knob" style="left: {{hideBottomHint ? 2 : 26}}px; top: 2px;"></div>
+          </stack>
+        </div>
+        <div class="row" onclick="toggleLoading">
+          <text class="label">瓦片加载动画</text>
+          <stack class="switch" style="background-color: {{showLoadingIndicators ? '#4d8df7' : '#39393d'}};">
+            <div class="knob" style="left: {{showLoadingIndicators ? 26 : 2}}px; top: 2px;"></div>
+          </stack>
         </div>
 
         <text class="section">应用</text>
-        <div class="card">
-          <div class="row" onclick="exitApp">
-            <text class="label label-danger">退出应用</text>
-            <text class="value" style="color: #8ba0a8;">关闭地图</text>
-          </div>
+        <div class="row" onclick="exitApp">
+          <text class="label label-danger">退出应用</text>
+          <text class="value" style="color: #8e8e93;">›</text>
         </div>
 
         <text class="hint">{{saveStatus}}</text>
@@ -132,18 +127,18 @@ export default {
 }
 </script>
 <style>
-.settings-root { width: 100%; height: 100%; background-color: #0d1518; }
+.settings-root { width: 100%; height: 100%; background-color: #000000; }
 .settings-scroll { width: 100%; height: 100%; }
-.settings-body { width: 100%; flex-direction: column; padding: 26px 22px 40px 22px; }
+.settings-body { width: 100%; flex-direction: column; padding: 24px 20px 40px 20px; }
 .back { height: 44px; width: 100%; justify-content: flex-start; }
-.back-text { color: #7fd6e4; font-size: 18px; }
-.title { color: #ffffff; font-size: 30px; text-align: center; margin-bottom: 20px; }
-.section { color: #6d838c; font-size: 15px; margin: 14px 6px 10px 6px; }
-.card { width: 100%; border-radius: 24px; background-color: #17242a; flex-direction: column; }
-.row { height: 68px; width: 100%; padding-left: 18px; padding-right: 18px; align-items: center; justify-content: space-between; }
+.back-text { color: #5c9dff; font-size: 18px; }
+.title { color: #ffffff; font-size: 30px; margin-bottom: 18px; }
+.section { color: #8e8e93; font-size: 15px; margin: 12px 8px 10px 8px; }
+.row { height: 66px; width: 100%; border-radius: 20px; background-color: #1c1c1e; margin-bottom: 10px; padding-left: 18px; padding-right: 18px; align-items: center; justify-content: space-between; }
 .label { color: #ffffff; font-size: 19px; }
-.label-danger { color: #ff8a80; }
-.value { font-size: 16px; }
-.divider { height: 1px; background-color: #24343b; margin-left: 18px; margin-right: 18px; }
-.hint { color: #5f757e; font-size: 14px; text-align: center; margin-top: 12px; }
+.label-danger { color: #ff6961; }
+.value { color: #8e8e93; font-size: 16px; }
+.switch { width: 52px; height: 30px; border-radius: 15px; }
+.knob { width: 26px; height: 26px; border-radius: 13px; background-color: #ffffff; }
+.hint { color: #6e6e73; font-size: 14px; text-align: center; margin-top: 12px; }
 </style>
