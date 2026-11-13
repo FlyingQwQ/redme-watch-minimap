@@ -472,6 +472,25 @@ function testTiandituProvider() {
   manager.destroy()
 }
 
+function testUrlFallbackOn404() {
+  var Providers = require('../src/common/map/providers')
+  var provider = Providers.get('tianditu-v1')
+  assert.ok(provider.urls && provider.urls.length === 2, 'tianditu ships two URL templates')
+  var network = { requests: [], fetch: function (o) { this.requests.push(o) } }
+  var manager = new TileManager(network, makeFileApi().api, null, null, provider)
+  manager.setVisible(true)
+  manager.setPlan([{ key: 'tianditu-v1:15:26978:12417', z: 15, x: 26978, unwrappedX: 26978, y: 12417, left: 0, top: 0, size: 256 }])
+  assert.strictEqual(network.requests.length, 1, 'the first attempt uses the primary template')
+  assert.ok(network.requests[0].url.indexOf('/vec_w/wmts?') > 0, 'the primary template is WMTS')
+  network.requests[0].success({ code: 404, headers: {}, data: new Uint8Array(0) })
+  assert.strictEqual(network.requests.length, 2, 'a hard 404 retries once on the alternate template')
+  assert.ok(network.requests[1].url.indexOf('DataServer?T=vec_w') > 0, 'the alternate template is DataServer')
+  network.requests[1].success({ code: 200, headers: { 'cache-control': 'public, max-age=604800' }, data: pngHeader() })
+  assert.ok(manager.disk['tianditu-v1:15:26978:12417'], 'a tile served by the alternate endpoint is cached')
+  assert.strictEqual(manager.stats.lastCode, 0, 'the fallback does not leave a failure code behind')
+  manager.destroy()
+}
+
 function testPreferencesAndProviderSwitch() {
   var Preferences = require('../src/common/map/preferences')
   var Providers = require('../src/common/map/providers')
@@ -902,6 +921,7 @@ testHongKongDefaultAndMathCaches()
 testFailureBorders()
 testPanNodeReuse()
 testPreferencesAndProviderSwitch()
+testUrlFallbackOn404()
 testTileLoadingIndicators()
 testAsyncCacheStartup()
 testNativeViewportCulling()

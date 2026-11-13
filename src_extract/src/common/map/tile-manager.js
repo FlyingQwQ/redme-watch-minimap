@@ -354,7 +354,7 @@ TileManager.prototype.checkDiskEntry = function (plan, entry) {
   }
 }
 
-TileManager.prototype.enqueue = function (plan, staleEntry, retry, preferFile) {
+TileManager.prototype.enqueue = function (plan, staleEntry, retry, preferFile, urlVariant) {
   if (!plan || this.dead || this.inFlight[plan.key]) return
   if (!retry && this.blocked[plan.key]) return
   if (!retry && this.failureRetryAt[plan.key]) {
@@ -371,6 +371,7 @@ TileManager.prototype.enqueue = function (plan, staleEntry, retry, preferFile) {
     plan: plan,
     stale: staleEntry || null,
     preferFile: !!preferFile,
+    urlVariant: urlVariant || 0,
     attempt: this.failureCount[plan.key] || 0,
     due: Date.now(),
     priority: requestPriority(plan, this.viewportWidth, this.viewportHeight)
@@ -459,7 +460,9 @@ TileManager.prototype.dispatchNetwork = function (job, options) {
 
 TileManager.prototype.startRequest = function (job) {
   var self = this
-  var url = this.provider.url
+  // A provider may ship several URL templates (Tianditu: WMTS + DataServer);
+  // a hard 404 on one is retried on the next template before giving up.
+  var url = (this.provider.urls && this.provider.urls[job.urlVariant || 0]) || this.provider.url
   if (this.provider.subdomains && url.indexOf('{s}') >= 0) {
     var hosts = this.provider.subdomains
     url = url.replace('{s}', hosts[(job.attempt || 0) % hosts.length])
@@ -553,7 +556,9 @@ TileManager.prototype.handleResponse = function (job, response) {
     return
   }
   if (!isImageBytes(bytes)) {
-    this.finishFailure(job, '地图图片格式或尺寸无效', 404, null)
+    // 415 distinguishes "downloaded but not a displayable 256x256 raster" from
+    // a real HTTP 404 so the status card is not misleading.
+    this.finishFailure(job, '地图图片格式或尺寸无效', 415, null)
     return
   }
   // Copy into an exact-length Uint8Array: Vela may hand back a view whose
@@ -706,8 +711,18 @@ TileManager.prototype.finishFailure = function (job, message, code, retryAfter) 
     this.cooldownUntil = Math.max(this.cooldownUntil, Date.now() + 10000)
     this.onStatus('网络连续失败 · 10秒后自动重试')
   }
-  if (code === 403 || code === 404) this.blocked[job.key] = true
-  var shouldRetry = code !== 403 && code !== 404 && count <= 2
+  // A hard HTTP 404 on one URL template is worth exactly one retry on the
+  // provider's next template before the tile is treated as unavailable.
+  var variant = job.urlVariant || 0
+  if (Number(code) === 404 && this.provider.urls && variant + 1 < this.provider.urls.length && this.desiredByKey[job.key]) {
+    this.finishRequest(job)
+    this.enqueue(this.desiredByKey[job.key], job.stale, true, job.preferFile, variant + 1)
+    this.publish()
+    this.pump()
+    return
+  }
+  if (code === 403 || code === 404 || code === 415) this.blocked[job.key] = true
+  var shouldRetry = code !== 403 && code !== 404 && code !== 415 && count <= 2
   var delay = Math.min(30000, 1000 * Math.pow(2, count - 1))
   if (code === 429) {
     var after = retryAfter ? parseRetryAfter(retryAfter) : 60000

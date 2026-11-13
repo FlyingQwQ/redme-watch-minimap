@@ -2,6 +2,7 @@
 // so the public repository never carries a private quota key.
 var TIANDITU_KEY = require('./tianditu-key.js').key
 var TIANDITU_BASE = 'https://{s}.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=' + TIANDITU_KEY
+var TIANDITU_DATA = 'https://{s}.tianditu.gov.cn/DataServer?T=vec_w&x={x}&y={y}&l={z}&tk=' + TIANDITU_KEY
 var TIANDITU_LABELS = 'https://{s}.tianditu.gov.cn/cva_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cva&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=' + TIANDITU_KEY
 
 var providers = [
@@ -11,6 +12,7 @@ var providers = [
     id: 'tianditu-v1',
     name: '天地图 · 矢量 + 注记',
     url: TIANDITU_BASE,
+    urls: [TIANDITU_BASE, TIANDITU_DATA],
     subdomains: ['t0', 't1', 't2', 't3'],
     overlayUrl: TIANDITU_LABELS,
     overlaySubdomains: ['t0', 't1', 't2', 't3'],
