@@ -477,10 +477,11 @@ function testPreferencesAndProviderSwitch() {
   var Providers = require('../src/common/map/providers')
   var saved = ''
   var storage = { get: function (o) { o.success(saved) }, set: function (o) { saved = o.value; o.success() } }
-  var values = { sourceId: 'osm-standard-v1', previousSourceId: 'osmfr-v1', hideBottomHint: true, showLoadingIndicators: false }
+  var values = { sourceId: 'osm-standard-v1', previousSourceId: 'osmfr-v1', hideBottomHint: true, showLoadingIndicators: false, showStatus: false }
   Preferences.save(storage, values, function () {}, function () { assert.fail('save failed') })
   Preferences.load(storage, function (restored) { assert.deepStrictEqual(restored, values, 'settings survive a fresh read') })
   assert.strictEqual(Preferences.normalize({ sourceId: 'bad-source' }).sourceId, 'osmfr-v1')
+  assert.strictEqual(Preferences.normalize({}).showStatus, true, 'status card defaults to visible')
   var file = makeFileApi()
   file.api.writeArrayBuffer = function (o) { o.fail('unavailable', 300) }
   var network = { requests: [], fetch: function (o) { this.requests.push(o) } }

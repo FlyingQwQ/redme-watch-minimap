@@ -1,6 +1,6 @@
 {
   "name": "redmi-watch6-native-map",
-  "version": "0.1.32",
+  "version": "0.1.33",
   "description": "Native Xiaomi Vela street map for REDMI Watch 6",
   "private": true,
   "engines": {

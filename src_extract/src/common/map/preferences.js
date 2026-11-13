@@ -6,7 +6,8 @@ function normalize(value) {
     sourceId: Providers.get(input.sourceId).id,
     previousSourceId: input.previousSourceId ? Providers.get(input.previousSourceId).id : '',
     hideBottomHint: input.hideBottomHint === true,
-    showLoadingIndicators: input.showLoadingIndicators !== false
+    showLoadingIndicators: input.showLoadingIndicators !== false,
+    showStatus: input.showStatus !== false
   }
 }
 function load(storage, callback) {

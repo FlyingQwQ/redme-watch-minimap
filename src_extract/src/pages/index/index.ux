@@ -19,7 +19,7 @@
     </stack>
 
     <stack class="controls-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
-      <div class="status-card" style="left: 14px; top: 12px; width: {{statusWidth}}px;" onclick="retryTiles" ontouchstart="onUiTouchStart">
+      <div if="{{showStatus}}" class="status-card" style="left: 14px; top: 12px; width: {{statusWidth}}px;" onclick="retryTiles" ontouchstart="onUiTouchStart">
         <text class="status-text">{{statusText}}</text>
         <text if="{{tileDiagText}}" class="status-diag">{{tileDiagText}}</text>
       </div>
@@ -195,6 +195,7 @@ function emptyOverlaySlots() {
 export default {
   private: {
     hideBottomHint: false,
+    showStatus: true,
     viewWidth: 432,
     viewHeight: 514,
     statusWidth: 220,
@@ -378,6 +379,7 @@ export default {
       var provider = Providers.get(value.sourceId)
       state.sourceId = value.sourceId
       self.hideBottomHint = value.hideBottomHint
+      self.showStatus = value.showStatus
       state.showLoadingIndicators = value.showLoadingIndicators
       self.mapAttribution = provider.attribution
       state.preferencesReady = true
