@@ -1,10 +1,10 @@
 <template>
   <stack id="map-root" class="map-root" style="width: {{viewWidth}}px; height: {{viewHeight}}px;" ontouchstart="onMapTouchStart" ontouchmove="onMapTouchMove" ontouchend="onMapTouchEnd" onlongpress="openSettings">
     <stack class="tile-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
-      <image for="{{visibleTiles}}" tid="id" class="map-tile" alt="blank" src="{{$item.src}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.drawWidth}}px; height: {{$item.drawHeight}}px;" oncomplete="onTileImageComplete($item.id, $item.src)" onerror="onTileImageError($item.id, $item.src)"></image>
+      <image for="{{visibleTiles}}" tid="tid" class="map-tile" alt="blank" src="{{$item.src}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.drawWidth}}px; height: {{$item.drawHeight}}px;" oncomplete="onTileImageComplete($item.id, $item.src)" onerror="onTileImageError($item.id, $item.src)"></image>
     </stack>
     <stack class="failure-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
-      <div for="{{failedTiles}}" tid="id" class="failed-tile" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.width}}px; height: {{$item.height}}px;"></div>
+      <div for="{{failedTiles}}" tid="tid" class="failed-tile" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.width}}px; height: {{$item.height}}px;"></div>
     </stack>
     <stack class="loading-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
       <stack for="{{loadingIndicators}}" tid="id" class="tile-loading" style="left: {{$item.left}}px; top: {{$item.top}}px;">
@@ -630,7 +630,7 @@ export default {
       var node = previousById[tile.id]
       var isNew = !node || node.src !== tile.src
       if (isNew) {
-        node = { id: tile.id, src: tile.src, left: 0, top: 0, width: 0, height: 0, drawWidth: 0, drawHeight: 0 }
+        node = { id: tile.id, tid: TileLayout.renderId(tile), src: tile.src, left: 0, top: 0, width: 0, height: 0, drawWidth: 0, drawHeight: 0 }
         fresh.push(node)
       }
       node.left = left
@@ -681,6 +681,10 @@ export default {
       clearTimeout(state.revealTimer)
       state.revealTimer = null
     }
+    // Keep the native list in grid order. Vela reuses list components by tid;
+    // an arbitrary previous+fresh order makes adjacent tiles swap positions
+    // when a new batch is revealed or a cached tile is replaced.
+    visible.sort(function (a, b) { return (a.top - b.top) || (a.left - b.left) })
     var same = visible.length === previous.length
     for (var v = 0; same && v < visible.length; v += 1) {
       if (visible[v] !== previous[v]) same = false

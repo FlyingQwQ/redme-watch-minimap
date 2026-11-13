@@ -15,10 +15,11 @@ function build(plans, tiles, errors, manager, width, height, scale) {
     // Keep the full tile outline. PanLayout repositions failure nodes from
     // tile x/y, so a viewport-clipped rect would drift after a drag.
     var rect = TileLayout.snappedRect(plan.left, plan.top, plan.size, scale)
-    result.push({ id: plan.key, key: plan.key, src: 'failure',
+    result.push({ id: plan.key, tid: TileLayout.renderId(plan), key: plan.key, src: 'failure',
       left: rect.left, top: rect.top, width: rect.width, height: rect.height,
       size: plan.size, z: plan.z, x: plan.x, y: plan.y, unwrappedX: plan.unwrappedX })
   }
+  result.sort(function (a, b) { return (a.top - b.top) || (a.left - b.left) })
   return result
 }
 module.exports = { build: build }

@@ -556,8 +556,9 @@ function testNativeViewportCulling() {
   rt.tiles = rt.tiles.map(function (tile) { return Object.assign({}, tile) })
   var center = engine.centerWorld()
   state.redrawTiles({ x: center.x + 10, y: center.y })
-  assert.strictEqual(state.visibleTiles[0], original, 'stable visible nodes survive source metadata refresh')
-  assert.deepStrictEqual(Object.keys(original).sort(), ['drawHeight', 'drawWidth', 'height', 'id', 'left', 'src', 'top', 'width'],
+  assert.ok(state.visibleTiles.some(function (tile) { return tile === original }),
+    'stable visible nodes survive source metadata refresh')
+  assert.deepStrictEqual(Object.keys(original).sort(), ['drawHeight', 'drawWidth', 'height', 'id', 'left', 'src', 'tid', 'top', 'width'],
     'the view model only receives render fields for each image node')
   state.redrawTiles({ x: center.x + 5000, y: center.y })
   assert.strictEqual(state.visibleTiles.length, 0, 'offscreen tile nodes are removed during a drag')

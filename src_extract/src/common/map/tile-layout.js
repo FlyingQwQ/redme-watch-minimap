@@ -48,6 +48,10 @@ function nearestTileX(tile, centerWorld, tileSize) {
   return tile.x + Math.round((centerTileX - tile.x) / count) * count
 }
 
+function renderId(tile) {
+  return String(tile.z) + '_' + String(tile.x) + '_' + String(tile.y)
+}
+
 function layoutTile(tile, centerWorld, tileSize, width, height, scale) {
   var tileX = nearestTileX(tile, centerWorld, tileSize)
   var left = tileX * tileSize - centerWorld.x + width / 2
@@ -55,6 +59,7 @@ function layoutTile(tile, centerWorld, tileSize, width, height, scale) {
   var rect = snappedRect(left, top, tileSize, scale)
   return {
     id: tile.id,
+    tid: renderId(tile),
     key: tile.key || tile.id,
     src: tile.src,
     left: rect.left,
@@ -106,6 +111,7 @@ module.exports = {
   snap: snap,
   snappedRect: snappedRect,
   nearestTileX: nearestTileX,
+  renderId: renderId,
   layoutTile: layoutTile,
   mergeVisibleTiles: mergeVisibleTiles
 }

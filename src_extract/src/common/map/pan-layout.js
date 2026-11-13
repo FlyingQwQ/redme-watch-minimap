@@ -23,7 +23,7 @@ function update(tiles, previous, center, zoom, size, width, height, scale, error
       for (var i = 0; i < previous.length; i += 1) {
         if (previous[i].id === tile.id && previous[i].src === tile.src) { node = previous[i]; break }
       }
-      if (!node) node = { id: tile.id, src: tile.src, left: left, top: top, width: size, height: size, drawWidth: size, drawHeight: size }
+      if (!node) node = { id: tile.id, tid: String(tile.z) + '_' + String(tile.x) + '_' + String(tile.y), src: tile.src, left: left, top: top, width: size, height: size, drawWidth: size, drawHeight: size }
       if (!next) next = previous.slice(0, visibleCount)
     }
     if (node.left !== left) node.left = left
@@ -31,7 +31,10 @@ function update(tiles, previous, center, zoom, size, width, height, scale, error
     if (next) next.push(node)
     visibleCount += 1
   }
-  if (next) return next
+  if (next) {
+    next.sort(function (a, b) { return (a.top - b.top) || (a.left - b.left) })
+    return next
+  }
   return visibleCount === previous.length ? previous : previous.slice(0, visibleCount)
 }
 module.exports = { update: update }
