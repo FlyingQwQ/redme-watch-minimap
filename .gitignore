@@ -1,3 +1,4 @@
 src_extract/node_modules/
+src_extract/src/common/map/tianditu-key.js
 *.log
 .DS_Store

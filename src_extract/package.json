@@ -1,16 +1,16 @@
 {
   "name": "redmi-watch6-native-map",
-  "version": "0.1.31",
+  "version": "0.1.32",
   "description": "Native Xiaomi Vela street map for REDMI Watch 6",
   "private": true,
   "engines": {
     "node": ">=8.10"
   },
   "scripts": {
-    "build": "aiot build",
-    "release": "aiot release",
+    "build": "node tools/ensure-keys.js && aiot build",
+    "release": "node tools/ensure-keys.js && aiot release",
     "start": "aiot start --watch",
-    "test": "node tests/map-core.test.js"
+    "test": "node tools/ensure-keys.js && node tests/map-core.test.js"
   },
   "devDependencies": {
     "@aiot-toolkit/jsc": "^1.0.3",

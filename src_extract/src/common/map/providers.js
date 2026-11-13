@@ -1,4 +1,6 @@
-var TIANDITU_KEY = '5c9949b2bef858a5b2aa9008604a43d5'
+// The key is injected from the git-ignored tianditu-key.js (see tools/ensure-keys.js)
+// so the public repository never carries a private quota key.
+var TIANDITU_KEY = require('./tianditu-key.js').key
 var TIANDITU_BASE = 'https://{s}.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=' + TIANDITU_KEY
 var TIANDITU_LABELS = 'https://{s}.tianditu.gov.cn/cva_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cva&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=' + TIANDITU_KEY
 

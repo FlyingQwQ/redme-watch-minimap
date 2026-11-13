@@ -496,11 +496,20 @@ function testPreferencesAndProviderSwitch() {
   manager.setProvider(Providers.get(engine.sourceId))
   manager.setPlan([next])
   network.requests[0].success({ code: 200, headers: {}, data: pngHeader() })
-  assert.strictEqual(network.requests[1].url, network.requests[0].url, 'fallback of an old request stays on its original provider')
-  network.requests[1].success({ code: 200, headers: {}, data: 'internal://tmp/old-source.png' })
-  assert.ok(network.requests[2].url.indexOf('https://tile.openstreetmap.org/') === 0, 'new viewport uses selected provider')
+  // With REQUEST_CONCURRENCY 2 the new plan request may start before the old
+  // tile's fallback; identify requests by URL instead of by position.
+  var fallbackRequest = null
+  var newSourceRequest = null
+  for (var r = 1; r < network.requests.length; r += 1) {
+    var request = network.requests[r]
+    if (!fallbackRequest && request.url === network.requests[0].url) fallbackRequest = request
+    else if (!newSourceRequest && request.url.indexOf('https://tile.openstreetmap.org/') === 0) newSourceRequest = request
+  }
+  assert.ok(fallbackRequest, 'fallback of an old request stays on its original provider')
+  assert.ok(newSourceRequest, 'new viewport uses selected provider')
+  fallbackRequest.success({ code: 200, headers: {}, data: 'internal://tmp/old-source.png' })
+  newSourceRequest.fail('closed', -1)
   manager.destroy()
-  network.requests[2].fail('closed', -1)
 }
 
 function testTileLoadingIndicators() {
@@ -830,7 +839,7 @@ function testNativeLayeringAndMemoryProfile() {
     'drag layer positions update at a bounded rate')
   assert.ok(page.indexOf('var TILE_APPLY_DELAY = 50') >= 0,
     'bursty tile callbacks are coalesced before native image work')
-  assert.strictEqual(Config.REQUEST_CONCURRENCY, 1, 'tile downloads use one concurrent request in the low-memory profile')
+  assert.strictEqual(Config.REQUEST_CONCURRENCY, 2, 'tile downloads stay at a bounded two-request concurrency on the low-memory watch')
   assert.strictEqual(Config.EDGE_BUFFER_RATIO, 0, 'the low-memory profile does not prefetch off-screen tiles')
   assert.ok(page.indexOf('width: {{$item.drawWidth}}px; height: {{$item.drawHeight}}px;') >= 0,
     'tiles use a precomputed draw size so the template never does arithmetic')

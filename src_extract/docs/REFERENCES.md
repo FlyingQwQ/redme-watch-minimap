@@ -48,3 +48,17 @@
 - `https://tile.osmchina.org/` 返回 HTTP 200，但 Content-Type 为 text/html，不是地图瓦片；根页面可访问不能当作瓦片服务可用证据。
 
 尚未找到社区公布的恢复服务公告或可用替代端点。因此未把正在使用的图源改为这一失效地址，也未生成声称接入成功的新安装包。当前出口非大陆，以上结果不能代表大陆速度测量。
+
+## 2026-11-13 单层注记图源调研
+
+目标：找一个免 Key、自带中文注记的免费街道图源，替换“天地图 vec+cva 双层”方案，绕开 Vela 原生 image 节点预算。
+
+| 服务 | 本轮探测 | 结论 |
+|---|---|---|
+| ArcGIS `World_Street_Map`（server.arcgisonline.com） | 北京/上海 z12 返回真实瓦片（约 43KB JPEG）；z14/z15/z16 均返回 2521 字节的 "Map data not yet available" 占位图；伦敦 z15 正常（31KB）。瓦片 URL 为 `tile/{z}/{y}/{x}` 顺序。 | 不采用。Esri 对中国区域没有高缩放级别数据授权，手表默认 z15 直接是占位图。 |
+| GeoQ `ChinaOnlineCommunity`（thematic.geoq.cn / map.geoq.cn） | thematic 返回 HTTP 500（text/html），map.geoq.cn TLS 连接失败。 | 不采用。服务不可用，且许可条款一直不明确。 |
+| CARTO `rastertiles/voyager` | 同一坐标不同 z/x/y 返回同一张 2049 字节 PNG，内容为 "API KEY REQUIRED · carto.com/basemaps/apikey" 占位图；a 子域 TLS 失败。 | 不采用。CARTO 已把免费无 Key 瓦片改为强制注册 API Key。 |
+| OSM France（现有默认） | 北京 z15 瓦片正常，但注记是拼音/拉丁转写（Chongwenmen Xiyeyan 等），不是中文字符。 | 保留为默认；可用但中文注记缺失。 |
+| OSM 官方 tile.openstreetmap.org | 本轮出口 TLS 连接失败（HTTP 000），未取得样本。 | 维持现有图源选项不变。 |
+
+结论：目前没有“免费 + 中文注记 + 可用”的单层图源。带中文注记的现实路径仍是天地图 `cva_w` 注记层（等待与底图共享槽位的重新设计）或需要注册 Key 的商业底图（MapTiler/Stadia 免费档、CARTO API Key）。本开发环境网络出口不稳定（ArcGIS/OSM 间歇 TLS 失败），不代表手表网络表现。

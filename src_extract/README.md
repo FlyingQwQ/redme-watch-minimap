@@ -265,6 +265,14 @@ GPS 单次请求最长等待 60 秒，结束后再启动订阅，不同时发起
 
 0.1.31 暂时关闭注记层：12 个底图 image 加 12 个注记 image 可能超过 Vela 的原生 image 节点预算，现象是 16 次请求全部成功、但底图 image 全部触发 onerror、整屏红框。模板现在只保留一个 12 槽位的底图列表。另加了二级恢复：底图第一次解码失败会重新下载，第二次解码失败会改用 `fetch responseType: 'file'` 的临时文件，绕开 JS 文件写入路径。
 
+## 0.1.32 Key 出库与并发调整
+
+天地图服务端 Key 从 `providers.js` 移到 git 忽略的 `src/common/map/tianditu-key.js`，公开仓库只保留占位模板 `tianditu-key.example.js`；`tools/ensure-keys.js` 在构建/测试前自动把模板复制到位，fresh clone 无需额外步骤即可构建（占位 Key 会 403，粘贴真实 Key 后正常）。注意：历史提交里仍能翻到旧 Key，介意配额安全应在天地图控制台重置 Key 后更新本地 `tianditu-key.js`。
+
+`REQUEST_CONCURRENCY` 从 1 提到 2：0.1.30 引入的保守值是排查期的产物，双并发可以把首屏 12 瓦片的下载时间近乎减半，仍在官方“减少并发”建议范围内。测试改为按 URL 识别旧请求的 file 兜底（并发 2 下新计划请求会先启动，固定下标不再成立），并把低内存守卫更新为有界两并发。
+
+同日图源调研（详见 docs/REFERENCES.md）：ArcGIS World_Street_Map 在中国区域 z14 起返回 "Map data not yet available" 占位图（授权缺口），GeoQ 两个域名均不可用，CARTO 瓦片已改为强制 API Key，因此本轮没有可替换的“单层自带中文注记”免费图源；OSM France 在中国区域渲染的是拼音注记。天地图注记层维持关闭，等待槽位方案重新设计。
+
 ## 0.1.26 槽位 tid 跟随瓦片身份
 
 0.1.25 的槽位 tid 固定为 `slot_i`，Vela 会把不同瓦片当成同一个原生 image 节点复用；缓存 URI 带 `Date.now()`，同一瓦片重新下载后 `src` 变化，旧位图可能留在槽位里，看起来像两张相同瓦片。0.1.26 把 tid 改为 `s{槽位}_{z}_{x}_{y}_{srcHash}`，空槽位为 `s{槽位}_e`：槽位里的瓦片或图源一变，tid 就变，Vela 必须销毁旧节点、创建新节点，旧位图不可能留在新位置。同一瓦片、同一 `src` 留在原槽位时 tid 不变，不会每帧重建。新增测试校验槽位 tid 唯一、跟随瓦片身份、`src` 变化时 tid 变化。
