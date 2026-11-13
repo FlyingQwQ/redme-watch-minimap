@@ -1,7 +1,7 @@
 <template>
   <stack id="map-root" class="map-root" style="width: {{viewWidth}}px; height: {{viewHeight}}px;" ontouchstart="onMapTouchStart" ontouchmove="onMapTouchMove" ontouchend="onMapTouchEnd" onlongpress="openSettings">
     <stack class="tile-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
-      <image for="{{visibleTiles}}" tid="tid" class="map-tile" alt="blank" src="{{$item.src}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.drawWidth}}px; height: {{$item.drawHeight}}px;" oncomplete="onTileImageComplete($item.id, $item.src)" onerror="onTileImageError($item.id, $item.src)"></image>
+      <image for="{{tileSlots}}" tid="tid" class="map-tile" alt="blank" src="{{$item.src}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.drawWidth}}px; height: {{$item.drawHeight}}px; opacity: {{$item.opacity}};" oncomplete="onTileImageComplete($item.id, $item.src)" onerror="onTileImageError($item.id, $item.src)"></image>
     </stack>
     <stack class="failure-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
       <div for="{{failedTiles}}" tid="tid" class="failed-tile" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.width}}px; height: {{$item.height}}px;"></div>
@@ -145,6 +145,14 @@ function sameRenderNodes(previous, next) {
   return true
 }
 
+function emptyTileSlots() {
+  var slots = []
+  for (var i = 0; i < Config.TILE_SLOT_COUNT; i += 1) {
+    slots.push({ tid: 'slot_' + i, id: '', src: '', left: 0, top: 0, drawWidth: 0, drawHeight: 0, opacity: 0 })
+  }
+  return slots
+}
+
 export default {
   private: {
     hideBottomHint: false,
@@ -157,6 +165,7 @@ export default {
     recenterTop: 284,
     zoomInTop: 350,
     zoomOutTop: 418,
+    tileSlots: emptyTileSlots(),
     visibleTiles: [],
     loadingIndicators: [],
     failedTiles: [],
@@ -233,6 +242,7 @@ export default {
     state.imageReady = {}
     state.imageErrors = {}
     state.imageRetries = {}
+    this.tileSlots = emptyTileSlots()
     this.visibleTiles = []
     this.failedTiles = []
     this.loadingIndicators = []
@@ -566,6 +576,42 @@ export default {
     state.autoRetryTimer = null
   },
 
+  applyTileSlots(visible) {
+    var previous = this.tileSlots || []
+    var byTile = {}
+    var used = {}
+    var seen = {}
+    var i
+    for (i = 0; i < previous.length; i += 1) {
+      if (previous[i].id) byTile[previous[i].id] = i
+    }
+    var slots = emptyTileSlots()
+    var nextFree = 0
+    for (i = 0; i < visible.length; i += 1) {
+      var tile = visible[i]
+      if (!tile || !tile.id || seen[tile.id]) continue
+      seen[tile.id] = true
+      var index = byTile[tile.id]
+      if (index === undefined || used[index]) {
+        while (nextFree < slots.length && used[nextFree]) nextFree += 1
+        index = nextFree
+      }
+      if (index >= slots.length) break
+      used[index] = true
+      slots[index] = {
+        tid: 'slot_' + index,
+        id: tile.id,
+        src: tile.src,
+        left: tile.left,
+        top: tile.top,
+        drawWidth: tile.drawWidth,
+        drawHeight: tile.drawHeight,
+        opacity: 1
+      }
+    }
+    this.tileSlots = slots
+  },
+
   flushPendingTiles() {
     var state = runtime
     if (state.tileApplyTimer !== null) {
@@ -690,6 +736,7 @@ export default {
       if (visible[v] !== previous[v]) same = false
     }
     if (!same) this.visibleTiles = visible
+    this.applyTileSlots(visible)
     if (state.revealPending) this.scheduleReveal()
     this.syncPinnedTiles(visible)
     var ready = {}
@@ -755,7 +802,7 @@ export default {
 
   onTileImageComplete(id, src) {
     var state = runtime
-    if (state.disposed || !state.pageVisible) return
+    if (!id || !src || state.disposed || !state.pageVisible) return
     for (var i = 0; i < this.visibleTiles.length; i += 1) {
       if (this.visibleTiles[i].id === id && this.visibleTiles[i].src === src) {
         state.imageReady[id] = src
@@ -854,6 +901,7 @@ export default {
       state.engine.zoom, state.tileSize, this.viewWidth, this.viewHeight,
       state.pixelScale, state.imageErrors)
     if (visible !== this.visibleTiles) this.visibleTiles = visible
+    this.applyTileSlots(visible)
     this.syncPinnedTiles(visible)
     var failed = PanLayout.update(state.failureRecords, this.failedTiles, center,
       state.engine.zoom, state.tileSize, this.viewWidth, this.viewHeight, state.pixelScale)
@@ -1122,7 +1170,7 @@ export default {
 
   onTileImageError(id, src) {
     var state = runtime
-    if (state.disposed || !state.pageVisible) return
+    if (!id || !src || state.disposed || !state.pageVisible) return
     for (var i = 0; i < this.visibleTiles.length; i += 1) {
       if (this.visibleTiles[i].id === id && this.visibleTiles[i].src === src) {
         delete state.imageReady[id]

@@ -552,6 +552,10 @@ function testNativeViewportCulling() {
   state.updateMarker = function () {}
   state.redrawTiles()
   assert.ok(state.visibleTiles.length > 0)
+  assert.strictEqual(state.tileSlots.length, Config.TILE_SLOT_COUNT, 'native image slot count is fixed')
+  var slotIds = state.tileSlots.filter(function (slot) { return slot.id }).map(function (slot) { return slot.id })
+  assert.strictEqual(slotIds.length, state.visibleTiles.length, 'every visible tile gets one native slot')
+  assert.strictEqual(new Set(slotIds).size, slotIds.length, 'no tile is rendered in two slots')
   var original = state.visibleTiles[0]
   rt.tiles = rt.tiles.map(function (tile) { return Object.assign({}, tile) })
   var center = engine.centerWorld()
