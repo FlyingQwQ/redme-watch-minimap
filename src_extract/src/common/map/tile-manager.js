@@ -356,6 +356,10 @@ TileManager.prototype.checkDiskEntry = function (plan, entry) {
 
 TileManager.prototype.enqueue = function (plan, staleEntry, retry, preferFile, urlVariant) {
   if (!plan || this.dead || this.inFlight[plan.key]) return
+  if (this.provider.direct) {
+    this.storeDirect(plan, retry === true)
+    return
+  }
   if (!retry && this.blocked[plan.key]) return
   if (!retry && this.failureRetryAt[plan.key]) {
     if (this.failureRetryAt[plan.key] > Date.now()) return
@@ -458,16 +462,36 @@ TileManager.prototype.dispatchNetwork = function (job, options) {
   catch (error) { settle(fail, null, -1) }
 }
 
+TileManager.prototype.buildTileUrl = function (plan, variant, attempt) {
+  var url = (this.provider.urls && this.provider.urls[variant || 0]) || this.provider.url
+  if (this.provider.subdomains && url.indexOf('{s}') >= 0) {
+    var hosts = this.provider.subdomains
+    url = url.replace('{s}', hosts[(attempt || 0) % hosts.length])
+  }
+  return url.replace('{z}', plan.z).replace('{x}', plan.x).replace('{y}', plan.y)
+}
+
+// Direct providers never touch JS fetch: the tile src is the remote URL and
+// the native image component downloads, caches, and decodes it itself. This
+// exists because the device fetch stack mangles chunked tile bodies (415) and
+// drops query parameters in 'file' mode (418) - both fatal for Tianditu.
+TileManager.prototype.storeDirect = function (plan, retry) {
+  if (retry) this.failureCount[plan.key] = (this.failureCount[plan.key] || 0) + 1
+  var uri = this.buildTileUrl(plan, 0, (plan.x + plan.y + (this.failureCount[plan.key] || 0)))
+  var existing = this.memory[plan.key]
+  if (existing && existing.uri === uri) {
+    existing.expires = Date.now() + 60000
+    return
+  }
+  this.memory[plan.key] = { uri: uri, expires: Date.now() + 60000, used: Date.now() }
+  this.touchMemory(plan.key)
+}
+
 TileManager.prototype.startRequest = function (job) {
   var self = this
   // A provider may ship several URL templates (Tianditu: WMTS + DataServer);
   // a hard 404 on one is retried on the next template before giving up.
-  var url = (this.provider.urls && this.provider.urls[job.urlVariant || 0]) || this.provider.url
-  if (this.provider.subdomains && url.indexOf('{s}') >= 0) {
-    var hosts = this.provider.subdomains
-    url = url.replace('{s}', hosts[(job.attempt || 0) % hosts.length])
-  }
-  url = url.replace('{z}', job.plan.z).replace('{x}', job.plan.x).replace('{y}', job.plan.y)
+  var url = this.buildTileUrl(job.plan, job.urlVariant, job.attempt)
   job.url = url
   this.stats.attempted += 1
   var headers = {

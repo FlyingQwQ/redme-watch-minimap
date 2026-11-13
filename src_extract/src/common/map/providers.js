@@ -1,9 +1,12 @@
 // The key is injected from the git-ignored tianditu-key.js (see tools/ensure-keys.js)
 // so the public repository never carries a private quota key.
 var TIANDITU_KEY = require('./tianditu-key.js').key
-var TIANDITU_BASE = 'https://{s}.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=' + TIANDITU_KEY
-var TIANDITU_DATA = 'https://{s}.tianditu.gov.cn/DataServer?T=vec_w&x={x}&y={y}&l={z}&tk=' + TIANDITU_KEY
-var TIANDITU_LABELS = 'https://{s}.tianditu.gov.cn/cva_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cva&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=' + TIANDITU_KEY
+// tk leads the query string: the device has shown both failure modes for this
+// provider (JS fetch mangles chunked bodies, and fetch 'file' drops query
+// parameters), so tiles are handed to the native <image> as remote URLs.
+var TIANDITU_BASE = 'https://{s}.tianditu.gov.cn/vec_w/wmts?tk=' + TIANDITU_KEY + '&SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}'
+var TIANDITU_DATA = 'https://{s}.tianditu.gov.cn/DataServer?tk=' + TIANDITU_KEY + '&T=vec_w&x={x}&y={y}&l={z}'
+var TIANDITU_LABELS = 'https://{s}.tianditu.gov.cn/cva_w/wmts?tk=' + TIANDITU_KEY + '&SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cva&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}'
 
 var providers = [
   { id: 'osmfr-v1', name: 'OSM 法国社区', url: 'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', subdomains: ['a', 'b', 'c'], attribution: '© OpenStreetMap / ODbL · Tiles: OSM France' },
@@ -13,10 +16,10 @@ var providers = [
     url: TIANDITU_BASE,
     urls: [TIANDITU_BASE, TIANDITU_DATA],
     subdomains: ['t0', 't1', 't2', 't3'],
-    // Fetch writes the tile straight to a native temp file and hands back its
-    // internal:// URI: no JS byte handling, no arraybuffer corruption, but the
-    // tile is session-only (temp files do not survive a restart).
-    preferFile: true,
+    // The tile src IS the remote URL: the native image component downloads and
+    // decodes it itself, with its own cache. No JS fetch, no byte validation,
+    // no temp files. Retries rotate the subdomain to force a fresh download.
+    direct: true,
     overlayUrl: TIANDITU_LABELS,
     overlaySubdomains: ['t0', 't1', 't2', 't3'],
     attribution: '© 天地图 · 矢量底图与注记'

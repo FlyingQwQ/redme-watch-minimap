@@ -439,54 +439,58 @@ function testTiandituProvider() {
   var Providers = require('../src/common/map/providers')
   var provider = Providers.get('tianditu-v1')
   assert.strictEqual(provider.id, 'tianditu-v1')
+  assert.ok(provider.direct, 'tianditu tiles render straight from remote URLs')
   assert.ok(provider.url.indexOf('/vec_w/wmts') >= 0, 'Tianditu base uses vec_w WMTS')
   assert.ok(provider.overlayUrl.indexOf('/cva_w/wmts') >= 0, 'Tianditu overlay uses cva_w WMTS')
+  assert.ok(provider.url.indexOf('?tk=') < provider.url.indexOf('&SERVICE='), 'the key leads the query string')
   assert.strictEqual(provider.headers, undefined, 'server key does not need browser headers')
   assert.ok(provider.url.indexOf('{z}') >= 0 && provider.url.indexOf('{x}') >= 0 && provider.url.indexOf('{y}') >= 0)
 
   var file = makeFileApi()
   var network = { requests: [], fetch: function (options) { this.requests.push(options) } }
-  var manager = new TileManager(network, file.api, function () {}, function () {}, {
-    url: provider.overlayUrl,
-    subdomains: provider.overlaySubdomains,
-    headers: provider.overlayHeaders,
-    directory: Config.OVERLAY_TILE_DIRECTORY,
-    indexUri: Config.OVERLAY_INDEX_URI
-  })
+  var manager = new TileManager(network, file.api, function () {}, function () {}, provider)
   manager.setViewportSize(432, 514)
   manager.setVisible(true)
   manager.setPlan([{
     key: 'tianditu-v1:15:26774:14302', z: 15, x: 26774, unwrappedX: 26774, y: 14302,
     left: 0, top: 0, size: 256
-  }], 'tianditu-v1-labels:')
-  assert.strictEqual(manager.directory, Config.OVERLAY_TILE_DIRECTORY, 'overlay cache has its own directory')
-  assert.strictEqual(manager.indexUri, Config.OVERLAY_INDEX_URI, 'overlay cache has its own index')
-  assert.strictEqual(manager.desired[0].key, 'tianditu-v1-labels:tianditu-v1:15:26774:14302', 'overlay keys do not collide with base tiles')
-  assert.strictEqual(network.requests.length, 1)
-  assert.ok(network.requests[0].url.indexOf('cva_w') >= 0)
-  assert.ok(network.requests[0].url.indexOf('TILEMATRIX=15') >= 0)
-  assert.ok(network.requests[0].url.indexOf('TILEROW=14302') >= 0)
-  assert.ok(network.requests[0].url.indexOf('TILECOL=26774') >= 0)
-  assert.strictEqual(network.requests[0].header['User-Agent'], Config.USER_AGENT, 'server key keeps the app UA')
-  network.requests[0].fail('closed', -1)
+  }])
+  assert.strictEqual(network.requests.length, 0, 'direct tiles never go through fetch')
+  var record = manager.memory['tianditu-v1:15:26774:14302']
+  assert.ok(record && record.uri.indexOf('/vec_w/wmts') >= 0, 'direct tiles carry the WMTS URL as src')
+  assert.ok(record.uri.indexOf('tk=') === record.uri.indexOf('?tk=') + 1, 'the key is the first query parameter')
+  assert.ok(record.uri.indexOf('t0.tianditu.gov.cn') >= 0, 'subdomains are substituted')
+  assert.ok(record.uri.indexOf('{') === -1, 'direct URLs are fully substituted')
+  assert.strictEqual(record.uri.indexOf('26978'), -1, 'the URL is not built from placeholder leftovers')
+  assert.ok(record.uri.indexOf('TILEMATRIX=15') >= 0)
+  assert.ok(record.uri.indexOf('TILEROW=14302') >= 0)
+  assert.ok(record.uri.indexOf('TILECOL=26774') >= 0)
+  manager.invalidateTile('tianditu-v1:15:26774:14302', record.uri)
+  var retried = manager.memory['tianditu-v1:15:26774:14302']
+  assert.ok(retried.uri !== record.uri, 'a direct retry rotates the subdomain for a fresh download')
+  assert.ok(retried.uri.indexOf('t1.tianditu.gov.cn') >= 0, 'the next subdomain is used on retry')
   manager.destroy()
 }
 
 function testUrlFallbackOn404() {
-  var Providers = require('../src/common/map/providers')
-  var provider = Providers.get('tianditu-v1')
-  assert.ok(provider.urls && provider.urls.length === 2, 'tianditu ships two URL templates')
+  var provider = {
+    id: 'fallback-test',
+    url: 'https://primary.example/tiles/{z}/{x}/{y}.png',
+    urls: ['https://primary.example/tiles/{z}/{x}/{y}.png', 'https://alt.example/pic?z={z}&y={y}&x={x}'],
+    subdomains: ['a']
+  }
+  assert.ok(provider.urls && provider.urls.length === 2, 'multi-template providers ship a primary and an alternate URL')
   var network = { requests: [], fetch: function (o) { this.requests.push(o) } }
   var manager = new TileManager(network, makeFileApi().api, null, null, provider)
   manager.setVisible(true)
-  manager.setPlan([{ key: 'tianditu-v1:15:26978:12417', z: 15, x: 26978, unwrappedX: 26978, y: 12417, left: 0, top: 0, size: 256 }])
+  manager.setPlan([{ key: 'fallback-test:15:26978:12417', z: 15, x: 26978, unwrappedX: 26978, y: 12417, left: 0, top: 0, size: 256 }])
   assert.strictEqual(network.requests.length, 1, 'the first attempt uses the primary template')
-  assert.ok(network.requests[0].url.indexOf('/vec_w/wmts?') > 0, 'the primary template is WMTS')
+  assert.ok(network.requests[0].url.indexOf('primary.example') > 0, 'the primary template is used first')
   network.requests[0].success({ code: 404, headers: {}, data: new Uint8Array(0) })
   assert.strictEqual(network.requests.length, 2, 'a hard 404 retries once on the alternate template')
-  assert.ok(network.requests[1].url.indexOf('DataServer?T=vec_w') > 0, 'the alternate template is DataServer')
+  assert.ok(network.requests[1].url.indexOf('alt.example/pic?') > 0, 'the alternate template is used on 404')
   network.requests[1].success({ code: 200, headers: { 'cache-control': 'public, max-age=604800' }, data: pngHeader() })
-  assert.ok(manager.disk['tianditu-v1:15:26978:12417'], 'a tile served by the alternate endpoint is cached')
+  assert.ok(manager.disk['fallback-test:15:26978:12417'], 'a tile served by the alternate endpoint is cached')
   assert.strictEqual(manager.stats.lastCode, 0, 'the fallback does not leave a failure code behind')
   manager.destroy()
 }
@@ -511,10 +515,10 @@ function testPreferencesAndProviderSwitch() {
   manager.setVisible(true)
   var first = engine.planVisibleTiles()[0]
   manager.setPlan([first])
-  engine.sourceId = 'tianditu-v1'
+  engine.sourceId = 'alt-source'
   var next = engine.planVisibleTiles()[0]
   assert.notStrictEqual(first.key, next.key, 'source cache keys are isolated')
-  manager.setProvider(Providers.get(engine.sourceId))
+  manager.setProvider({ url: 'https://alt.example/{z}/{x}/{y}.png' })
   manager.setPlan([next])
   network.requests[0].success({ code: 200, headers: {}, data: pngHeader() })
   // With serial requests the old tile's file fallback completes before the new
@@ -527,7 +531,7 @@ function testPreferencesAndProviderSwitch() {
   fallbackRequest.success({ code: 200, headers: {}, data: 'internal://tmp/old-source.png' })
   var newSourceRequest = null
   for (var r2 = 1; r2 < network.requests.length; r2 += 1) {
-    if (network.requests[r2].url.indexOf('vec_w/wmts') > 0) { newSourceRequest = network.requests[r2]; break }
+    if (network.requests[r2].url.indexOf('alt.example') > 0) { newSourceRequest = network.requests[r2]; break }
   }
   assert.ok(newSourceRequest, 'new viewport uses selected provider')
   newSourceRequest.fail('closed', -1)

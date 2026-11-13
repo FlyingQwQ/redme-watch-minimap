@@ -8,7 +8,7 @@ module.exports = {
   TILE_SOURCE_ID: 'osmfr-v1',
   TILE_URL: 'https://a.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png',
   TILE_ATTRIBUTION: '© OpenStreetMap / ODbL · Tiles: OSM France',
-  USER_AGENT: 'RedmiWatch6NativeMap/0.1.39 (Xiaomi Vela)',
+  USER_AGENT: 'RedmiWatch6NativeMap/0.1.40 (Xiaomi Vela)',
   // Two parallel fetches to the same host correlated with byte corruption on
   // device (Tianditu tiles failing the 256x256 validation). One at a time.
   REQUEST_CONCURRENCY: 1,
