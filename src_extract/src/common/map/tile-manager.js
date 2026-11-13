@@ -812,7 +812,7 @@ TileManager.prototype.armWatchdog = function (job) {
   }, Config.REQUEST_TIMEOUT_MS)
 }
 
-TileManager.prototype.invalidateTile = function (key, src) {
+TileManager.prototype.invalidateTile = function (key, src, preferFile) {
   if (this.dead) return
   var record = this.memory[key]
   if (record && record.uri === src) {
@@ -830,7 +830,7 @@ TileManager.prototype.invalidateTile = function (key, src) {
   delete this.blocked[key]
   var plan = this.desiredByKey[key]
   if (plan) {
-    this.enqueue(plan, null, true, false)
+    this.enqueue(plan, null, true, !!preferFile)
     this.publish()
     this.pump()
   }

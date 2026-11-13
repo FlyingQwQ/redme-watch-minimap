@@ -2,7 +2,6 @@
   <stack id="map-root" class="map-root" style="width: {{viewWidth}}px; height: {{viewHeight}}px;" ontouchstart="onMapTouchStart" ontouchmove="onMapTouchMove" ontouchend="onMapTouchEnd" onlongpress="openSettings">
     <stack class="tile-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
       <image for="{{tileSlots}}" tid="tid" class="map-tile" alt="blank" src="{{$item.src}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.drawWidth}}px; height: {{$item.drawHeight}}px; opacity: {{$item.opacity}};" oncomplete="onTileImageComplete($item.id, $item.src)" onerror="onTileImageError($item.id, $item.src)"></image>
-      <image for="{{overlaySlots}}" tid="tid" if="{{$item.src}}" class="map-tile map-label" alt="blank" src="{{$item.src}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.drawWidth}}px; height: {{$item.drawHeight}}px; opacity: {{$item.opacity}};"></image>
     </stack>
     <stack class="failure-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
       <div for="{{failedTiles}}" tid="tid" class="failed-tile" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.width}}px; height: {{$item.height}}px;"></div>
@@ -405,7 +404,6 @@ export default {
         self.failedTiles = []
         self.loadingIndicators = []
         self.destroyOverlayManager()
-        if (state.runtimeReady) self.createOverlayManager(provider)
       }
       self.finalizeLayout()
       if (state.runtimeReady) self.startRuntime()
@@ -525,7 +523,8 @@ export default {
     })
     state.tileManager.setViewportSize(this.viewWidth, this.viewHeight)
     state.tileManager.setVisible(state.pageVisible)
-    this.createOverlayManager(Providers.get(state.sourceId))
+    // Label layer is disabled for now; see the note in the template.
+    this.destroyOverlayManager()
     state.runtimeReady = true
     this.updateTilePlan()
     this.updateTileDiagnostics()
@@ -1336,6 +1335,13 @@ export default {
           delete state.imageErrors[id]
           state.tileManager.invalidateTile(id, src)
           this.statusText = '地图图片解码失败，正在重新下载'
+        } else if (retries < 2 && state.tileManager) {
+          // If the manual cache write produced bytes the decoder rejects, let
+          // Vela download straight to its own temporary file and use that URI
+          // without copying the payload through the JS file API.
+          delete state.imageErrors[id]
+          state.tileManager.invalidateTile(id, src, true)
+          this.statusText = '缓存图片不可读，改用临时图片'
         } else {
           state.imageErrors[id] = src
           if (!state.gesture && !state.pinch) this.redrawTiles()
