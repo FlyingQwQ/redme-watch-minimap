@@ -170,8 +170,13 @@ TileManager.prototype.destroy = function () {
   this.retireTimer = null
   var activeKeys = Object.keys(this.inFlight)
   for (var a = 0; a < activeKeys.length; a += 1) {
-    if (this.inFlight[activeKeys[a]].watchdog) clearTimeout(this.inFlight[activeKeys[a]].watchdog)
+    var activeJob = this.inFlight[activeKeys[a]]
+    if (activeJob.watchdog) clearTimeout(activeJob.watchdog)
+    // The native fetch cannot be cancelled. Release its logical slot and let a
+    // late callback (or the recovery timer) give the global slot back.
+    this.abandonNetworkSlot(activeJob)
   }
+  this.inFlight = {}
   this.clearEphemeral()
   this.pruneRetired(true)
   this.queue = []
@@ -408,6 +413,8 @@ TileManager.prototype.dispatchNetwork = function (job, options) {
     job.fetchPending = false
     if (job.abandoned) {
       job.abandoned = false
+      if (job.abandonRecovery) clearTimeout(job.abandonRecovery)
+      job.abandonRecovery = null
       abandonedRequests = Math.max(0, abandonedRequests - 1)
     }
     if (job.counted) {
@@ -733,6 +740,29 @@ TileManager.prototype.publish = function () {
   this.onChange(tiles, this.desired.length, tiles.length)
 }
 
+TileManager.prototype.abandonNetworkSlot = function (job) {
+  if (!job || (!job.fetchPending && !job.counted)) return
+  if (job.fetchPending && job.counted) {
+    job.counted = false
+    nativeRequests = Math.max(0, nativeRequests - 1)
+  }
+  if (job.abandoned) return
+  job.abandoned = true
+  abandonedRequests += 1
+  var self = this
+  // Some firmware never invokes either fetch callback. Without this recovery,
+  // two such requests leave abandonedRequests at MAX forever and every later
+  // tile, including automatic retry, is refused by pump().
+  if (job.abandonRecovery) clearTimeout(job.abandonRecovery)
+  job.abandonRecovery = setTimeout(function () {
+    if (!job.abandoned) return
+    job.abandoned = false
+    job.abandonRecovery = null
+    abandonedRequests = Math.max(0, abandonedRequests - 1)
+    if (!self.dead) self.pump()
+  }, Config.REQUEST_TIMEOUT_MS + 5000)
+}
+
 TileManager.prototype.armWatchdog = function (job) {
   if (job.watchdog) clearTimeout(job.watchdog)
   var self = this
@@ -742,13 +772,9 @@ TileManager.prototype.armWatchdog = function (job) {
     job.timedOut = true
     // A JS timer cannot cancel the native fetch. Release the logical slot so a
     // hung socket cannot stall every later tile; a late callback is ignored by
-    // the inFlight identity check.
-    if (job.fetchPending && job.counted) {
-      job.counted = false
-      nativeRequests = Math.max(0, nativeRequests - 1)
-      job.abandoned = true
-      abandonedRequests += 1
-    }
+    // the inFlight identity check, while the recovery timer covers firmware
+    // that never calls back at all.
+    self.abandonNetworkSlot(job)
     self.finishFailure(job, '地图请求超时', 408, null)
   }, Config.REQUEST_TIMEOUT_MS)
 }
