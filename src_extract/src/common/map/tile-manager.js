@@ -7,7 +7,7 @@ var nativeRequests = 0
 // A timed-out native fetch cannot be cancelled. Keep a small bounded number of
 // abandoned requests so one hung socket can never stop the map forever.
 var abandonedRequests = 0
-var MAX_ABANDONED_REQUESTS = 2
+var MAX_ABANDONED_REQUESTS = 4
 
 function TileManager(network, fileApi, onChange, onStatus, provider) {
   this.provider = provider || { url: Config.TILE_URL }

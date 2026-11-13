@@ -610,14 +610,19 @@ function testNativeViewportCulling() {
     z: slotTile.z, x: slotTile.x, y: slotTile.y, src: 'internal://files/test-label.png'
   }]
   state.applyTileSlots(state.visibleTiles)
-  var labelled = state.tileSlots.filter(function (slot) { return slot.id === slotTile.id })[0]
-  assert.strictEqual(labelled.overlaySrc, 'internal://files/test-label.png', 'label layer follows the base tile coordinate')
-  assert.strictEqual(labelled.overlayOpacity, 1)
-  assert.ok(labelled.overlayTid.indexOf('o') === 0 && labelled.overlayTid.indexOf('_e') < 0, 'label slot has its own native node')
+  var slotIndex = -1
+  for (var slotPos = 0; slotPos < state.tileSlots.length; slotPos += 1) {
+    if (state.tileSlots[slotPos].id === slotTile.id) slotIndex = slotPos
+  }
+  var labelled = state.overlaySlots[slotIndex]
+  assert.strictEqual(labelled.src, 'internal://files/test-label.png', 'label layer follows the base tile coordinate')
+  assert.strictEqual(labelled.opacity, 1)
+  assert.ok(labelled.tid.indexOf('o') === 0 && labelled.tid.indexOf('_e') < 0, 'label layer has its own native list')
   rt.overlayTiles = []
   state.applyTileSlots(state.visibleTiles)
-  labelled = state.tileSlots.filter(function (slot) { return slot.id === slotTile.id })[0]
-  assert.strictEqual(labelled.overlayOpacity, 0, 'label layer is cleared when no label tile is available')
+  labelled = state.overlaySlots[slotIndex]
+  assert.strictEqual(labelled.opacity, 0, 'label layer is cleared when no label tile is available')
+  assert.strictEqual(labelled.src, '')
   var tidBefore = state.tileSlots.filter(function (slot) { return slot.id === slotTile.id })[0].tid
   state.applyTileSlots(state.visibleTiles.map(function (tile) {
     return tile.id === slotTile.id ? Object.assign({}, tile, { src: tile.src + '?v=2' }) : tile

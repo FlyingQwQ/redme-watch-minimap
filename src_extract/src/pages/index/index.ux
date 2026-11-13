@@ -2,7 +2,7 @@
   <stack id="map-root" class="map-root" style="width: {{viewWidth}}px; height: {{viewHeight}}px;" ontouchstart="onMapTouchStart" ontouchmove="onMapTouchMove" ontouchend="onMapTouchEnd" onlongpress="openSettings">
     <stack class="tile-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
       <image for="{{tileSlots}}" tid="tid" class="map-tile" alt="blank" src="{{$item.src}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.drawWidth}}px; height: {{$item.drawHeight}}px; opacity: {{$item.opacity}};" oncomplete="onTileImageComplete($item.id, $item.src)" onerror="onTileImageError($item.id, $item.src)"></image>
-      <image for="{{tileSlots}}" tid="overlayTid" class="map-tile map-label" alt="blank" src="{{$item.overlaySrc}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.overlayDrawWidth}}px; height: {{$item.overlayDrawHeight}}px; opacity: {{$item.overlayOpacity}};"></image>
+      <image for="{{overlaySlots}}" tid="tid" if="{{$item.src}}" class="map-tile map-label" alt="blank" src="{{$item.src}}" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.drawWidth}}px; height: {{$item.drawHeight}}px; opacity: {{$item.opacity}};"></image>
     </stack>
     <stack class="failure-layer" style="left: 0px; top: 0px; width: {{viewWidth}}px; height: {{viewHeight}}px;">
       <div for="{{failedTiles}}" tid="tid" class="failed-tile" style="left: {{$item.left}}px; top: {{$item.top}}px; width: {{$item.width}}px; height: {{$item.height}}px;"></div>
@@ -86,6 +86,7 @@ function createRuntimeState() {
     tileManager: null,
     overlayManager: null,
     overlayPrefix: '',
+    overlayReady: false,
     overlayTiles: [],
     pendingOverlayTiles: null,
     locationManager: null,
@@ -170,12 +171,23 @@ function emptyTileSlots() {
       top: 0,
       drawWidth: 0,
       drawHeight: 0,
-      opacity: 0,
-      overlayTid: 'o' + i + '_e',
-      overlaySrc: '',
-      overlayDrawWidth: 0,
-      overlayDrawHeight: 0,
-      overlayOpacity: 0
+      opacity: 0
+    })
+  }
+  return slots
+}
+
+function emptyOverlaySlots() {
+  var slots = []
+  for (var i = 0; i < Config.TILE_SLOT_COUNT; i += 1) {
+    slots.push({
+      tid: 'o' + i + '_e',
+      src: '',
+      left: 0,
+      top: 0,
+      drawWidth: 0,
+      drawHeight: 0,
+      opacity: 0
     })
   }
   return slots
@@ -194,6 +206,7 @@ export default {
     zoomInTop: 350,
     zoomOutTop: 418,
     tileSlots: emptyTileSlots(),
+    overlaySlots: emptyOverlaySlots(),
     visibleTiles: [],
     loadingIndicators: [],
     failedTiles: [],
@@ -277,6 +290,7 @@ export default {
     state.imageErrors = {}
     state.imageRetries = {}
     this.tileSlots = emptyTileSlots()
+    this.overlaySlots = emptyOverlaySlots()
     this.visibleTiles = []
     this.failedTiles = []
     this.loadingIndicators = []
@@ -386,6 +400,7 @@ export default {
         state.imageRetries = {}
         state.lastTileStatus = ''
         self.tileSlots = emptyTileSlots()
+        self.overlaySlots = emptyOverlaySlots()
         self.visibleTiles = []
         self.failedTiles = []
         self.loadingIndicators = []
@@ -524,6 +539,7 @@ export default {
     if (state.disposed || !provider || !provider.overlayUrl) return
     var self = this
     state.overlayPrefix = provider.id + '-labels:'
+    state.overlayReady = false
     state.overlayManager = new TileManager(fetch, file, function (tiles) {
       self.onOverlayManagerChange(tiles)
     }, function () {}, {
@@ -542,6 +558,7 @@ export default {
     if (state.overlayManager) state.overlayManager.destroy()
     state.overlayManager = null
     state.overlayPrefix = ''
+    state.overlayReady = false
     state.overlayTiles = []
     state.pendingOverlayTiles = null
   },
@@ -571,9 +588,18 @@ export default {
     state.pendingRequired = requiredCount
     state.pendingLoaded = loadedCount
     this.updateTileDiagnostics()
-    if (loadedCount > 0) this.clearAutoRetry()
-    else if (requiredCount > 0) this.scheduleAutoRetry()
+    if (loadedCount > 0) {
+      this.clearAutoRetry()
+      this.enableOverlay()
+    } else if (requiredCount > 0) this.scheduleAutoRetry()
     this.scheduleTileApply()
+  },
+
+  enableOverlay() {
+    var state = runtime
+    if (!state.overlayManager || state.overlayReady) return
+    state.overlayReady = true
+    this.updateTilePlan()
   },
 
   onOverlayManagerChange(tiles) {
@@ -688,6 +714,7 @@ export default {
       if (previous[i].id) byTile[previous[i].id] = i
     }
     var slots = emptyTileSlots()
+    var overlaySlots = emptyOverlaySlots()
     var nextFree = 0
     for (i = 0; i < visible.length; i += 1) {
       var tile = visible[i]
@@ -714,15 +741,22 @@ export default {
         top: tile.top,
         drawWidth: tile.drawWidth,
         drawHeight: tile.drawHeight,
-        opacity: 1,
-        overlayTid: overlaySrc ? 'o' + index + '_' + srcTag(overlaySrc) : 'o' + index + '_e',
-        overlaySrc: overlaySrc,
-        overlayDrawWidth: overlaySrc ? tile.drawWidth : 0,
-        overlayDrawHeight: overlaySrc ? tile.drawHeight : 0,
-        overlayOpacity: overlaySrc ? 1 : 0
+        opacity: 1
+      }
+      if (overlaySrc) {
+        overlaySlots[index] = {
+          tid: 'o' + index + '_' + srcTag(overlaySrc),
+          src: overlaySrc,
+          left: tile.left,
+          top: tile.top,
+          drawWidth: tile.drawWidth,
+          drawHeight: tile.drawHeight,
+          opacity: 1
+        }
       }
     }
     this.tileSlots = slots
+    this.overlaySlots = overlaySlots
   },
 
   flushPendingTiles() {
@@ -745,7 +779,9 @@ export default {
     state.tileManager.setPlan(plans)
     if (state.overlayManager) {
       state.overlayManager.setViewportSize(this.viewWidth, this.viewHeight)
-      state.overlayManager.setPlan(plans, state.overlayPrefix)
+      // Do not let the label layer compete with the base layer for the single
+      // watch request slot before the first base tile has loaded.
+      if (state.overlayReady) state.overlayManager.setPlan(plans, state.overlayPrefix)
     }
     this.redrawTiles(centerWorld)
   },
