@@ -441,8 +441,7 @@ function testTiandituProvider() {
   assert.strictEqual(provider.id, 'tianditu-v1')
   assert.ok(provider.url.indexOf('/vec_w/wmts') >= 0, 'Tianditu base uses vec_w WMTS')
   assert.ok(provider.overlayUrl.indexOf('/cva_w/wmts') >= 0, 'Tianditu overlay uses cva_w WMTS')
-  assert.strictEqual(provider.headers.Referer, 'https://www.tianditu.gov.cn/', 'browser key needs a referer')
-  assert.ok(provider.headers['User-Agent'].indexOf('Mozilla/5.0') === 0, 'browser key needs a browser-like UA')
+  assert.strictEqual(provider.headers, undefined, 'server key does not need browser headers')
   assert.ok(provider.url.indexOf('{z}') >= 0 && provider.url.indexOf('{x}') >= 0 && provider.url.indexOf('{y}') >= 0)
 
   var file = makeFileApi()
@@ -468,8 +467,7 @@ function testTiandituProvider() {
   assert.ok(network.requests[0].url.indexOf('TILEMATRIX=15') >= 0)
   assert.ok(network.requests[0].url.indexOf('TILEROW=14302') >= 0)
   assert.ok(network.requests[0].url.indexOf('TILECOL=26774') >= 0)
-  assert.strictEqual(network.requests[0].header.Referer, 'https://www.tianditu.gov.cn/')
-  assert.ok(network.requests[0].header['User-Agent'].indexOf('Mozilla/5.0') === 0, 'provider UA overrides the app UA')
+  assert.strictEqual(network.requests[0].header['User-Agent'], Config.USER_AGENT, 'server key keeps the app UA')
   network.requests[0].fail('closed', -1)
   manager.destroy()
 }
